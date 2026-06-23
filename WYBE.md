@@ -1703,7 +1703,7 @@ The implementation procedures are resolved in the module containing the
 `impl` declaration.  If there are matching procedures imported from elsewhere,
 the local matching procedure is preferred.
 
-### Default trait operations
+### Default trait implementations
 
 A trait may give an abstract operation a default implementation by declaring a
 concrete procedure or function in the trait module with the same signature.
@@ -1721,10 +1721,11 @@ pub def greet(x:_): string = "default greeting"
 # silent.wybe
 use greeter
 
+constructor silent(x:int)
 impl greeter
 ```
 
-Here `greet(silent)` returns `"default greeting"`.  A concrete implementation
+Here `greet(silent(42))` returns `"default greeting"`.  A concrete implementation
 in `silent` named `greet` with the matching signature overrides the default.
 
 
