@@ -1,0 +1,5 @@
+trait
+
+abstract describe(x:_): string
+
+pub def describe(x:_): string = "unnamed"

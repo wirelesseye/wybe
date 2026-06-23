@@ -91,12 +91,35 @@ visibilityItem = do
 
 -- | Parse module-local items (with no visibility prefix).
 privateItem :: Parser Item
-privateItem = typeRepItem <|> pragmaItem
+privateItem = typeRepItem <|> traitItem <|> pragmaItem <|> abstractProcOrFuncItem <|> implItem
 
 
 -- | Parse a pragma item
 pragmaItem :: Parser Item
 pragmaItem = ident "pragma" *> (PragmaDecl <$> parsePragma)
+
+
+-- | Parse a 'abstract' procedure or function
+abstractProcOrFuncItem :: Parser Item
+abstractProcOrFuncItem = do
+    keypos <- tokenPosition <$> ident "abstract"
+    mods <- modifierList >>= parseWith (processProcModifiers keypos "abstract procedure or function declaration")
+    (proto, returnType) <- limitedTerm prototypePrecedence >>= parseWith termToPrototype
+    ress <- if returnType == AnyType then useResourceFlowSpecs else return []
+    return $ AbstractProcDecl mods proto { procProtoResources = ress } returnType $ Just keypos
+
+
+-- | Parse a trait 'impl' item
+implItem :: Parser Item
+implItem = do
+    keypos <- tokenPosition <$> ident "impl"
+    typ <- optionMaybe (try $ do
+            typ' <- primaryTerm >>= parseWith termToTypeSpec
+            symbol "<:"
+            pure typ'
+        )
+    trait <- typeSpec
+    return $ TraitImpl typ trait $ Just keypos
 
 
 -- TODO:  Should use the Term parser to parse the declaration body.
@@ -135,6 +158,16 @@ typeRepItem = do
                  <$> modifierList
     rep <- typeRep
     return $ RepresentationDecl params modifiers rep $ Just keypos
+
+
+-- | Module trait declaration
+traitItem :: Parser Item
+traitItem = do
+    keypos <- tokenPosition <$> ident "trait"
+    params <- typeVarNames
+    modifiers <- List.foldl processTypeModifier defaultTypeModifiers
+                 <$> modifierList
+    return $ TraitDecl params modifiers $ Just keypos
 
 
 -- | Module type representation declaration
@@ -645,6 +678,7 @@ data Associativity = LeftAssociative | NonAssociative | RightAssociative
 operatorAssociativity :: String -> (Int,Associativity)
 operatorAssociativity ":"  = (11, LeftAssociative)
 operatorAssociativity ":!" = (11, LeftAssociative)
+operatorAssociativity "<:"  = (11, RightAssociative)
 operatorAssociativity ","  = ( 0, RightAssociative)
 operatorAssociativity ";"  = (-1, RightAssociative)
 operatorAssociativity "\n" = (-1, RightAssociative)
@@ -1294,12 +1328,23 @@ termToTypeSpec (Embraced _ Paren args Nothing) =
     HigherOrderType defaultProcModifiers <$> mapM termToTypeFlow args
 termToTypeSpec (Call _ [] name ParamIn [])
   | isTypeVar name =
-    return $ TypeVariable $ RealTypeVar name
+    return $ TypeVariable (RealTypeVar name) Set.empty
+termToTypeSpec (Call _ [] "<:" ParamIn [Call _ [] name ParamIn [],bound])
+  | isTypeVar name = do
+    bounds <- termToTypeVarBounds bound
+    return $ TypeVariable (RealTypeVar name) bounds
 termToTypeSpec (Call _ mod name ParamIn params)
   | not $ isTypeVar name =
     TypeSpec mod name <$> mapM termToTypeSpec params
 termToTypeSpec other =
     syntaxError (termPos other) $ "invalid type specification " ++ show other
+
+
+termToTypeVarBounds :: TranslateTo (Set TraitSpec)
+termToTypeVarBounds (Embraced pos Brace bounds Nothing)
+  | List.null bounds = syntaxError pos "type variable bounds cannot be empty"
+  | otherwise = Set.fromList <$> mapM termToTypeSpec bounds
+termToTypeVarBounds bound = Set.singleton <$> termToTypeSpec bound
 
 termToTypeFlow :: TranslateTo TypeFlow
 termToTypeFlow (Call _ [] ":" _ [Call _ [] _ flow [],ty]) =
@@ -1347,7 +1392,7 @@ termToCtorField (Call pos [] ":" ParamIn [Call _ [] name ParamIn [],ty]) = do
     return $ Param name ty' ParamIn Ordinary `maybePlace` Just pos
 termToCtorField (Call pos [] name ParamIn [])
   | isTypeVar name = do
-    return $ Param "" (TypeVariable $ RealTypeVar name) ParamIn Ordinary
+    return $ Param "" (TypeVariable (RealTypeVar name) Set.empty) ParamIn Ordinary
                 `maybePlace` Just pos
 termToCtorField (Call pos mod name ParamIn params)
   | not $ isTypeVar name = do

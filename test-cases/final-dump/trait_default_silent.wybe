@@ -1,0 +1,5 @@
+use trait_default_greeter
+
+impl trait_default_greeter
+
+pub constructor trait_default_silent

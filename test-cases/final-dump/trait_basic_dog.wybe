@@ -1,0 +1,7 @@
+use trait_basic_speaker
+
+impl trait_basic_speaker
+
+pub constructor trait_basic_dog(name:string)
+
+pub def speak(x:_): string = "$(x^name) says woof"

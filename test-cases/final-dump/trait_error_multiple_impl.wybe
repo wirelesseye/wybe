@@ -1,0 +1,12 @@
+module required_method {
+    trait
+
+    abstract render(x:T<:_): string
+}
+
+impl int <: required_method
+
+def render(x:int): string = "first"
+def render(x:int): string = "second"
+
+!println(required_method.render(42))

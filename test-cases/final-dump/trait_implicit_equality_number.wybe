@@ -1,0 +1,5 @@
+use trait_implicit_equality_equality
+
+impl trait_implicit_equality_equality
+
+pub constructor trait_implicit_equality_number(value:int)

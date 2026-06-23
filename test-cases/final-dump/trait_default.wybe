@@ -1,0 +1,5 @@
+use trait_default_greeter, trait_default_silent
+
+def greet_through_trait(x:trait_default_greeter): string = greet(x)
+
+!println(greet_through_trait(trait_default_silent))

@@ -1,0 +1,3 @@
+trait
+
+abstract describe(x:_): string

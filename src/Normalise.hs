@@ -72,6 +72,12 @@ normaliseItem (RepresentationDecl params mods rep pos) = do
     updateTypeModifiers mods
     addParameters (RealTypeVar <$> params) pos
     addTypeRep rep pos
+normaliseItem (TraitDecl params mods pos) = do
+    updateTypeModifiers mods
+    -- TODO: implement trait type parameters
+    unless (List.null params) $ nyi "trait type parameters"
+    addParameters (RealTypeVar <$> params) pos
+    addTrait pos
 normaliseItem (ConstructorDecl vis params mods ctors pos) = do
     updateTypeModifiers mods
     addParameters (RealTypeVar <$> params) pos
@@ -137,14 +143,57 @@ normaliseItem (ForeignProcDecl vis lang mods mbAlias proto@(ProcProto name param
                     resources
     params' = params
         ++ [Param outputVariableName resulttype ParamOut Ordinary `maybePlace` pos | resulttype /= AnyType]
+normaliseItem (AbstractProcDecl mods proto@(ProcProto name params resources) resulttype pos) = do
+    when (mods{modifierImpurity=Pure, modifierDetism=Det} /= defaultProcModifiers)
+        $ errmsg pos
+        $ "Abstract procedure declaration of " ++ name
+            ++ " has illegal procedure modifiers. Only purity and determinism can be specified."
+    mapM_ ((\(Param{paramType=ty, paramName=name}, pos) -> do
+            when (ty == AnyType)
+                $ errmsg pos
+                $ "Abstract procedure declaration parameters must be typed, but " ++ name ++ " is untyped."
+        ) . unPlace) params
+    addAbstractProc 0 (AbstractProcDecl mods proto{procProtoParams=params'} resulttype pos)
+
+  where
+    params' = params
+        ++ [Param outputVariableName resulttype ParamOut Ordinary `maybePlace` pos | resulttype /= AnyType]
 normaliseItem item@ProcDecl{} = do
     logNormalise $ "Recording proc without flattening:" ++ show item
     addProc 0 item
 normaliseItem (StmtDecl stmt pos) = do
     logNormalise $ "Normalising statement decl " ++ show stmt
     updateModule (\s -> s { stmtDecls = maybePlace stmt pos : stmtDecls s})
+normaliseItem item@(TraitImpl typ trait pos) = do
+    mspec <- getModuleSpec
+    params <- getModule modParams
+    let typ' = fromMaybe (TypeSpec [] currentModuleAlias []) typ
+    addTraitImpl pos (VTableSpec trait typ') Nothing
 normaliseItem (PragmaDecl prag) =
     addPragma prag
+
+
+-- |Resolve this module's trait implementations and publish them in its interface.
+normaliseTraitImpls :: Compiler ()
+normaliseTraitImpls = do
+    knownTraitImpls <- getModuleImplementationField modKnownTraitImpls
+    knownTraitImpls' <- Map.fromList <$>
+        traverse (\(k, v) -> (\k' -> (k', v)) <$> normaliseVTableSpec k v) (Map.toList knownTraitImpls)
+    updateImplementation (\impl -> impl{ modKnownTraitImpls=knownTraitImpls' })
+    thisMod <- getModuleSpec
+    let traitImpls = Map.map (fromMaybe thisMod . content) knownTraitImpls'
+    updateModInterface (\int -> int{ traitImpls=traitImpls })
+
+
+-- |Resolve an unqualified vtable specification once its defining module is known.
+normaliseVTableSpec :: VTableSpec -> Placed (Maybe ModSpec) -> Compiler VTableSpec
+normaliseVTableSpec vspec@(VTableSpec trait typ) mod =
+    case content mod of
+        Just _ -> return vspec
+        Nothing -> do
+            typ' <- lookupType "trait impl" Nothing typ
+            trait' <- lookupType "trait impl" Nothing trait
+            return $ VTableSpec trait' typ'
 
 
 -- |Normalise a nested submodule containing the specified items.
@@ -196,6 +245,7 @@ completeNormalisation modSCC = do
     completeTypeNormalisation modSCC
     mapM_ (normaliseModMain modSCC `inModule`) modSCC
     mapM_ (transformModuleProcs flattenProcBody) modSCC
+    mapM_ (normaliseTraitImpls `inModule`) modSCC
 
 
 -- | Layout the types on the specified module list, which comprise a strongly
@@ -222,7 +272,7 @@ completeNormalisation modSCC = do
 completeTypeNormalisation :: [ModSpec] -> Compiler ()
 completeTypeNormalisation mods = do
     mods' <- filterM (getSpecModule "completeTypeNormalisation"
-                      (modIsType &&& isNothing . modTypeRep)) mods
+                      (modIsType &&& isNothing . modTypeRep &&& isNothing . modTrait)) mods
     typeSCCs <- modSCCTypeDeps mods'
     logNormalise $ "Ordered type dependency SCCs: " ++ show typeSCCs
     mapM_ completeTypeSCC typeSCCs
@@ -398,7 +448,7 @@ completeType modspec (TypeDef params ctors) = do
     when (numConsts >= fromIntegral smallestAllocatedAddress)
       $ nyi $ "Type '" ++ show modspec ++ "' has too many constant constructors"
 
-    let typespec = TypeSpec [] currentModuleAlias $ List.map TypeVariable params
+    let typespec = TypeSpec [] currentModuleAlias $ List.map (`TypeVariable` Set.empty) params
 
     let constItems = concatMap (constCtorItems typespec) $ zip constCtors [0..]
 

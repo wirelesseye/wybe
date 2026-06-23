@@ -195,7 +195,7 @@ import           Analysis
 import           AST
 import           ASTShow                   (logDump, logDumpWith)
 import           Callers                   (collectCallers)
-import           Clause                    (compileProc)
+import           Clause                    (compileProc, compileTraitImpls)
 import           Config
 import           Control.Monad
 import           Control.Monad.Extra
@@ -836,6 +836,8 @@ compileModSCC mspecs = do
     logDump Unbranch Clause "UNBRANCHING"
     -- AST manipulation before this line
     ----------------------------------
+    -- VTABLE GENERATION
+    mapM_ compileTraitImpls mspecs
     -- CLAUSE GENERATION
     mapM_ (transformModuleProcs compileProc) mspecs
     -- LPVM from here

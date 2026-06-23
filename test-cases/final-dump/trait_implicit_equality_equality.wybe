@@ -1,0 +1,3 @@
+trait
+
+abstract {test}(x:T<:_ = y:T<:_)

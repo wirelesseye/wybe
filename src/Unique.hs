@@ -413,11 +413,11 @@ uniquenessCheckClosure _ _ _ ty =
 
 uniquenessCheckGeneric :: Bool -> ModSpec -> ProcName -> OptPos
                        -> TypeSpec -> TypeSpec -> Uniqueness ()
-uniquenessCheckGeneric partial mod name pos ty (TypeVariable var) =
+uniquenessCheckGeneric partial mod name pos ty (TypeVariable var _) =
     whenM (lift $ typeIsUnique ty)
         $ uniquenessErr $ UniqueGenericError mod name pos ty
                         $ ErrorCallBinding partial var
-uniquenessCheckGeneric partial mod name pos (TypeVariable var) ty =
+uniquenessCheckGeneric partial mod name pos (TypeVariable var _) ty =
     whenM (lift $ typeIsUnique ty)
         $ uniquenessErr $ UniqueGenericError mod name pos ty
                         $ ErrorCallBinding partial var

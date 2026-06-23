@@ -1,0 +1,1 @@
+abstract not_a_trait(x:T<:int): string

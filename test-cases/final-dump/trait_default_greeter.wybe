@@ -1,0 +1,5 @@
+trait
+
+abstract greet(x:T<:_): string
+
+pub def greet(x:_): string = "default greeting"

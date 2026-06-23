@@ -293,13 +293,13 @@ expandPrim call@(PrimCall id pspec impurity args gFlows) pos = do
                 _ -> (args', pspec)
         def' <- if pspec == pspec' then return def else lift2 $ getProcDef pspec'
         case procImpln def' of
-            ProcDefSrc _ -> shouldnt $ "uncompiled proc: " ++ show pspec
             ProcDefPrim{procImplnProto = proto, procImplnBody = body} ->
                 if procInline def'
                 then inlineCall proto args'' body pos
                 else do
                     logExpansion "  Not inlinable"
                     addInstr call' pos
+            _ -> shouldnt $ "uncompiled proc: " ++ show pspec
 expandPrim prim@(PrimHigher id fn impurity args) pos = do
     logExpansion $ "  Checking inlining for higher order call " ++ show prim
     inliningNow <- isJust <$> gets inlining
@@ -308,6 +308,10 @@ expandPrim prim@(PrimHigher id fn impurity args) pos = do
     else do
         (fn':args') <- mapM expandArg $ fn:args
         expandHigherOrder (PrimHigher id fn' impurity args') pos
+expandPrim prim@(PrimVirtualCall id table index impurity args gFlows) pos = do
+    logExpansion $ "  Expand virtual call " ++ show prim
+    (table':args') <- mapM expandArg $ table:args
+    addInstr (PrimVirtualCall id table' index impurity args' gFlows) pos
 expandPrim (PrimForeign lang nm flags args) pos = do
     st <- get
     logExpansion $ "  Expanding " ++ show (PrimForeign lang nm flags args)
@@ -413,17 +417,20 @@ expandArg' arg@(ArgVar var ty flow ft _) = do
 expandArg' arg@(ArgClosure ps as ty) = do
     as' <- mapM expandArg as
     return $ ArgClosure ps as' ty
+expandArg' arg@(ArgVTable info ty) = case info of
+    Left spec -> return arg
+    Right val -> expandArg val
 expandArg' arg = return arg
 
 
 
 expandType :: TypeSpec -> Expander TypeSpec
-expandType (TypeVariable var) = do
+expandType (TypeVariable var _) = do
     renaming <- gets typeRenaming
     case Map.lookup var renaming of
         Just ty' -> return ty'
         Nothing -> do
-            ty' <- TypeVariable . FauxTypeVar <$> lift freshTmp
+            ty' <- (`TypeVariable` Set.empty) . FauxTypeVar <$> lift freshTmp
             modify $ \s -> s { typeRenaming=Map.insert var ty' $ typeRenaming s }
             return ty'
 expandType ty@TypeSpec{typeParams=tys} = do
@@ -476,7 +483,7 @@ addParamTypeRenaming param arg =
 
 -- |Add type renamings for all types in the first operand with the second.
 addTypeRenaming :: TypeSpec -> TypeSpec -> Expander ()
-addTypeRenaming (TypeVariable var) ty = modify $ \s -> s{typeRenaming=Map.insert var ty $ typeRenaming s}
+addTypeRenaming (TypeVariable var _) ty = modify $ \s -> s{typeRenaming=Map.insert var ty $ typeRenaming s}
 addTypeRenaming TypeSpec{typeParams=paramTys} TypeSpec{typeParams=argTys} = 
     zipWithM_ addTypeRenaming paramTys argTys
 addTypeRenaming HigherOrderType{higherTypeParams=paramTyFlows} HigherOrderType{higherTypeParams=argTyFlows} = 

@@ -1,0 +1,3 @@
+trait
+
+abstract wrong_param(x:T<:_, y:U<:_): string

@@ -6,7 +6,7 @@
 --           : LICENSE in the root directory of this project.
 
 
-module Clause (compileProc) where
+module Clause (compileProc, compileTraitImpls) where
 
 import           AST
 import           Control.Monad
@@ -16,6 +16,7 @@ import           Control.Monad.Trans.State
 import           Data.List                         as List
 import           Data.Map                          as Map
 import           Data.Maybe                        as Maybe
+import           Data.Ord                          as Ord
 import           Data.Set                          as Set
 import           Data.Char                         (ord)
 import           UnivSet                           as USet
@@ -25,7 +26,7 @@ import           Text.ParserCombinators.Parsec.Pos
 import           Util
 import           Resources
 import           UnivSet                           (emptyUnivSet)
-import           Config                            (byteBits, wordSize)
+import           Config                            (byteBits, wordSize, wordSizeBytes)
 
 
 ----------------------------------------------------------------
@@ -55,12 +56,14 @@ data ClauseCompState = ClauseCompState {
         currVars       :: Numbering,   -- ^current var number for each var
         nextVars       :: Numbering,   -- ^var numbers after current stmt
         nextCallSiteID :: CallSiteID,  -- ^The next callSiteID to use
-        clauseImpurity :: Impurity     -- ^Impurity of the enclosing proc
+        vTableParamDict :: Map BoundedTypeVar PrimParam,
+                                       -- ^compiled vtable params
+        clauseImpurity :: Impurity    -- ^Impurity of the enclosing proc
         }
 
 
 initClauseComp :: Impurity -> ClauseCompState
-initClauseComp = ClauseCompState Map.empty Map.empty 0
+initClauseComp = ClauseCompState Map.empty Map.empty 0 Map.empty
 
 
 -- |Get the next versioned name of the specified variable
@@ -144,32 +147,40 @@ evalClauseComp impurity clcomp =
 compileProc :: ProcDef -> Int -> Compiler ProcDef
 compileProc proc procID =
     evalClauseComp (procImpurity proc) $ do
-        let ProcDefSrc body = procImpln proc
+        let body = case procImpln proc of
+                ProcDefSrc body -> body
+                ProcDefAbstract -> []
+                impl -> shouldnt $ "compileProc ProcDefPrim " ++ show impl
         let proto = procProto proc
         let procName = procProtoName proto
         let params = content <$> procProtoParams proto
-        modify (\st -> st {nextCallSiteID=procCallSiteCount proc})
+        let boundedTypeParams = procBoundedTypeParams proc
+        vTableParams <- concat <$> lift (zipWithM compileVTableParam [0..] boundedTypeParams)
+        let vTableParamDict = Map.fromList (zip boundedTypeParams vTableParams)
+        modify (\st -> st {nextCallSiteID=procCallSiteCount proc
+                          ,vTableParamDict=vTableParamDict})
         logClause $ "--------------\nCompiling proc " ++ show proto
         mapM_ (nextVar . paramName) $ List.filter (flowsIn . paramFlow) params
         finishStmt
+        mSpec <- lift getModuleSpec
+        let pSpec = ProcSpec mSpec procName procID Set.empty
         startVars <- getCurrNumbering
-        compiled <- compileBody body params Det
+        compiled <- case procAbstract proc of
+            Just id -> compileAbstractBody pSpec id params Det
+            Nothing -> compileBody body params Det
         logClause $ "Compiled to  :"  ++ showBlock 4 compiled
         endVars <- getCurrNumbering
         logClause $ "  startVars  : " ++ show startVars
         logClause $ "  endVars    : " ++ show endVars
         logClause $ "  params     : " ++ show params
         let idxs = scanl (\i f -> i + if flowsIn f && flowsOut f then 2 else 1) 0 $ paramFlow <$> params
-            params' = concat $ zipWith (compileParam gFlows startVars endVars procName) idxs params
+            params' = concat (zipWith (compileParam gFlows startVars endVars procName) idxs params) ++ vTableParams
             gFlows  = makeGlobalFlows (zip [0..] params') $ procProtoResources proto
         let proto' = PrimProto (procProtoName proto) params' gFlows
         logClause $ "  comparams  : " ++ show params'
         logClause $ "  globalFlows: " ++ show gFlows
         callSiteCount <- gets nextCallSiteID
-        mSpec <- lift $ getModule modSpec
-        let pSpec = ProcSpec mSpec procName procID Set.empty
-        return $ proc { procImpln = ProcDefPrim pSpec proto' compiled
-                                        emptyProcAnalysis Map.empty,
+        return $ proc { procImpln = ProcDefPrim pSpec proto' compiled emptyProcAnalysis Map.empty,
                         procCallSiteCount = callSiteCount}
 
 
@@ -209,6 +220,33 @@ compileBody stmts params detism = do
           prims <- mapM compileSimpleStmt stmts
           end <- closingStmts detism params
           return $ ProcBody (prims++end) NoFork
+
+
+-- |Compile an abstract trait method as a virtual call through the vtable
+--  supplied for the trait's bounded type parameter.  The method's ordinary
+--  parameters are still compiled as call arguments, and the usual closing
+--  statements preserve their declared flows.
+compileAbstractBody :: ProcSpec -> Int -> [Param] -> Determinism -> ClauseComp ProcBody
+compileAbstractBody pSpec index params detism = do
+    thisMod <- lift getModuleSpec
+    vTableParamDict <- gets vTableParamDict
+    -- Type checking guarantees that exactly one bounded type parameter belongs
+    -- to this trait, so it identifies the vtable used for dispatch.
+    let typeVarBound = trustFromJust "compileAbstractBody" $
+            find (\(_,trait) -> typeModule trait == Just thisMod) (Map.keys vTableParamDict)
+    let vTableParam = trustFromJust "compileAbstractBody" $ Map.lookup typeVarBound vTableParamDict
+    let vTableArg = primParamToArg vTableParam
+    callSiteID <- gets nextCallSiteID
+    impurity <- gets clauseImpurity
+    -- Compile each source-level parameter into its primitive calling form;
+    -- parameters with both input and output flows may produce two arguments.
+    let args = List.map paramToVar params
+    args' <- concat <$> mapM (placedApply compileArg) args
+    gFlows <- lift $ getProcGlobalFlows pSpec
+    let prim = Unplaced $ PrimVirtualCall callSiteID vTableArg index impurity args' gFlows
+    finishStmt
+    end <- closingStmts detism params
+    return $ ProcBody (prim:end) NoFork
 
 
 compileCond :: [Placed Prim] -> OptPos -> Exp -> [Placed Stmt]
@@ -266,9 +304,15 @@ compileSimpleStmt' call@(ProcCall func _ _ args) = do
             let procID' = trustFromJust ("compileSimpleStmt' for " ++ showStmt 4 call)
                             procID
             let pSpec = ProcSpec mod name procID' generalVersion
-            impurity' <- max impurity . procImpurity <$> lift (getProcDef pSpec)
+            procDef <- lift (getProcDef pSpec)
+            let impurity' = max impurity (procImpurity procDef)
+            let params = procProtoParams $ procProto procDef
+            let boundedTypeParams = procBoundedTypeParams procDef
+            let typeVarMap = getTypeVarMap params args
+            vTableArgs <- mapM (compileVTableArg typeVarMap) boundedTypeParams
+            logClause $ "vTableArgs for " ++ name ++ ": " ++ show vTableArgs
             gFlows <- lift $ getProcGlobalFlows pSpec
-            return $ PrimCall callSiteID pSpec impurity' args' gFlows
+            return $ PrimCall callSiteID pSpec impurity' (args' ++ vTableArgs) gFlows
         Higher fn -> do
             let impurity' = max impurity . modifierImpurity . higherTypeModifiers 
                           . trustFromJust ("untyped higher-order term " ++ show fn) . maybeExpType $ content fn
@@ -299,6 +343,33 @@ compileSimpleStmt' Fail =
     compileSimpleStmt' $ content $ move boolFalse (boolVarSet outputStatusName)
 compileSimpleStmt' stmt =
     shouldnt $ "Normalisation left complex statement:\n" ++ showStmt 4 stmt
+
+
+-- | Get a mapping from the type variable names to the argument types in a proc call
+getTypeVarMap :: [Placed Param] -> [Placed Exp] -> Map TypeVarName TypeSpec
+getTypeVarMap _ [] = Map.empty
+getTypeVarMap params@(x:xs) args@(y:ys) =
+    case (content x, content y) of
+        (Param _ (TypeVariable name _) _ _, Typed exp typ coerce) ->
+            Map.insert name typ $ getTypeVarMap xs ys
+        _ -> getTypeVarMap xs ys
+getTypeVarMap params args = shouldnt $ "getTypeVariableMap " ++ show params ++ show args
+
+
+compileVTableArg :: Map TypeVarName TypeSpec -> BoundedTypeVar -> ClauseComp PrimArg
+compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
+    let argType = trustFromJust "compileVTableArg" $ Map.lookup paramVarName typeVarMap
+    case argType of
+        TypeVariable argVarName _ -> do
+            vTableParamDict <- gets vTableParamDict
+            let boundedVarInProc = (argVarName, paramVarBound)
+            let param = trustFromJust ("compileVTableArg for vtable: " ++ show boundedVarInProc) $
+                    Map.lookup boundedVarInProc vTableParamDict
+            let arg = primParamToArg param
+            return $ ArgVTable (Right arg) (Representation CPointer)
+        _ -> do
+            let vspec = VTableSpec paramVarBound argType
+            return $ ArgVTable (Left vspec) (Representation CPointer)
 
 
 compileArg :: Exp -> OptPos -> ClauseComp [PrimArg]
@@ -399,6 +470,41 @@ compileParam allFlows startVars endVars procName idx param@(Param name ty flow f
   where
     inIdx = idx
     outIdx = if flowsIn flow then idx + 1 else idx
+
+
+compileVTableParam :: Int -> BoundedTypeVar -> Compiler [PrimParam]
+compileVTableParam index (varName, bound) = do
+    currMod <- getModuleSpec
+    boundTyp <- lookupType "compileVTableParam" Nothing bound
+    let boundMod = trustFromJust "compileVTableParam" $ typeModule boundTyp
+    return [PrimParam (PrimVarName "#vtable" index) (Representation CPointer)
+            FlowIn VTable (ParamInfo False emptyGlobalFlows)]
+
+
+compileTraitImpls :: ModSpec -> Compiler ()
+compileTraitImpls thisMod = do
+    reenterModule thisMod
+    traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
+    vTables <- Map.mapMaybe id <$> Map.traverseWithKey compileVTable traitImpls
+    updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
+    reexitModule
+
+
+compileVTable :: VTableSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
+compileVTable vspec opmod = do
+    logMsg Clause $ "Compiling vtable " ++ show vspec ++ " defined in " ++ show opmod
+    thisMod <- getModuleSpec
+    traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs `inModule` fromMaybe thisMod opmod
+    let procSpecs = trustFromJust "compileVTable" $ Map.lookup vspec traitImplProcSpecs
+    let sz = wordSizeBytes * length procSpecs
+        values = List.map FnPointerStructMember procSpecs
+    case opmod of
+        Just mod -> do
+            ancestor <- isAncestor thisMod mod
+            if ancestor
+                then return Nothing -- Don't generate duplicated vtables in the same LLVM module
+                else Just <$> recordConstStruct (VTableInfo sz values True vspec mod) Nothing
+        Nothing -> Just <$> recordConstStruct (VTableInfo sz values False vspec thisMod) Nothing
 
 
 -- |A synthetic output parameter carrying the test result

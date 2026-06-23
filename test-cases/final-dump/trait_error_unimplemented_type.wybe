@@ -1,0 +1,9 @@
+module greeter {
+    trait
+
+    abstract greet(x:T<:_): string
+}
+
+def greet_through_trait(x:greeter): string = greet(x)
+
+!println(greet_through_trait(42))

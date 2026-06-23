@@ -287,6 +287,10 @@ preScanProcs = do
     procss <- lift $ getModuleImplementationField (Map.elems . modProcs)
     logLLVM $ "preScanProcs: "
                 ++ intercalate ", " (concatMap (List.map (show.procName)) procss)
+    vTables <- lift $ getModule modVTables
+    logLLVM $ "Start recording vTables in module " ++ showModSpec thisMod
+    mapM_ recordConst vTables
+    logLLVM "End recording vTables"
     let bodies = concatMap (concatMap allProcBodies) procss
     mapM_ (mapLPVMBodyM (recordExtern mod) (prescanArg mod)) bodies
     mapM_ (preScanBodyForks mod) bodies
@@ -335,6 +339,14 @@ recordIfConst (PointerStructMember structID) = do
     recordConst structID
 recordIfConst (GenericStructMember member) =
     recordIfConst member
+recordIfConst (FnPointerStructMember pspec@(ProcSpec mod _ _ _)) = do
+    thisMod <- lift getModuleSpec
+    unless (thisMod == mod) $ do
+        logLLVM $ "Recording extern proc " ++ show pspec
+        pdef <- lift $ getProcDef pspec
+        let params = (primProtoParams . procImplnProto . procImpln) pdef
+        let args = List.map primParamToArg params
+        recordExternProc thisMod pspec args
 recordIfConst _ = return ()
 
 
@@ -356,6 +368,9 @@ recordConstParts CStringInfo{} = return ()
 recordConstParts StructInfo{structData=members} = do
     logLLVM $ "Recording parts of constant struct " ++ show members
     mapM_ recordIfConst members
+recordConstParts VTableInfo{vtableData=members} = do
+    logLLVM $ "Recording parts of vtable " ++ show members
+    mapM_ recordIfConst members
 recordConstParts ArrayInfo{arrayData=elts} = do
     logLLVM $ "Recording elts of constant array " ++ show elts
     mapM_ recordIfConst elts
@@ -376,6 +391,8 @@ argConstValue (ArgGlobal info _) = do
     -- XXX ArgGlobal is a constant pointer to a global resource or global value,
     -- but for now we don't support them in constant structures
     return Nothing
+argConstValue (ArgVTable _ _) = do
+    return Nothing
 argConstValue (ArgConstRef structID _) = do
     return $ Just $ PointerStructMember structID
 argConstValue ArgUnneeded{} = return Nothing
@@ -388,6 +405,7 @@ argConstValue (ArgUndef ty) = do
 recordExtern :: ModSpec -> Prim -> LLVM ()
 recordExtern mod (PrimCall _ pspec _ args _) = recordExternProc mod pspec args
 recordExtern _ PrimHigher{} = return ()
+recordExtern _ PrimVirtualCall{} = return ()
 recordExtern _ (PrimForeign "llvm" _ _ _) = return ()
 recordExtern _ (PrimForeign "lpvm" "alloc" _ _) =
     recordExternSpec externAlloc
@@ -800,6 +818,10 @@ writeAssemblyPrim instr@(PrimHigher _ fn _ args) pos = do
     releaseDeferredCall
     logLLVM $ "* Translating HO call " ++ show instr
     writeHOCall fn args pos
+writeAssemblyPrim instr@(PrimVirtualCall _ table index _ args _) pos = do
+    releaseDeferredCall
+    logLLVM $ "* Translating Virtual call " ++ show instr
+    writeVirtualCall table index args pos
 writeAssemblyPrim instr@(PrimForeign "llvm" op flags args) pos = do
     releaseDeferredCall
     logLLVM $ "* Translating LLVM instruction " ++ show instr
@@ -852,6 +874,20 @@ writeHOCall closure args pos = do
         prefix <- tailMarker False
         llvmAssignResults outs $
             prefix ++ "call fastcc " ++ outTy ++ " " ++ fnVar ++ argList
+
+
+writeVirtualCall :: PrimArg -> Int -> [PrimArg] -> OptPos -> LLVM ()
+writeVirtualCall table index args pos = do
+    (ins,outs,oRefs,iRefs) <- partitionArgsWithRefs args
+    fnPtr <- getElementPtr True (llvmTypeRep CPointer) (Just table) [ArgInt (fromIntegral index) intType]
+    (writeFnPtr,readFnPtr) <- freshTempArgs $ Representation CPointer
+    llvmLoad fnPtr writeFnPtr
+    fnVar <- llvmValue readFnPtr
+    argList <- llvmArgumentList ins
+    outTy <- llvmReturnType $ List.map argType outs
+    prefix <- tailMarker False
+    llvmAssignResults outs $
+        prefix ++ "call fastcc " ++ outTy ++ " " ++ fnVar ++ argList
 
 
 -- | Work out the appropriate prefix for a call:  tail, musttail, or nothing.
@@ -1145,6 +1181,16 @@ declareStructConstant name (StructInfo sz members) section = do
     llvmFields <- llvmConstStruct members
     llvmPutStrLn $ llvmGlobalName name
                     ++ " = private unnamed_addr constant " ++ llvmFields
+                    ++ maybe "" ((", section "++) . show) section
+                    ++ ", align " ++ show wordSizeBytes
+declareStructConstant _ (VTableInfo sz members external spec mod) section = do
+    let llvmType = llvmStructType $ llvmConstValueRep <$> members
+    llvmFields <- llvmConstStruct members
+    name <- lift $ llvmVTableName spec mod
+    llvmPutStrLn $ llvmGlobalName name ++ " = "
+                    ++ (if external then "external " else "")
+                    ++ "unnamed_addr constant "
+                    ++ (if external then llvmType else llvmFields)
                     ++ maybe "" ((", section "++) . show) section
                     ++ ", align " ++ show wordSizeBytes
 declareStructConstant name (CStringInfo str) section = do
@@ -1612,6 +1658,14 @@ llvmValue arg@(ArgClosure pspec args ty) = do
             logLLVM $ "Converting to representation " ++ show rep
             llvmValue readPtr
 llvmValue (ArgGlobal val _) = llvmGlobalInfoName val
+llvmValue (ArgVTable info _) = case info of
+    Left vspec -> do
+        knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
+        let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup vspec knownTraitImpls
+        thisMod <- lift getModuleSpec
+        let mod = fromMaybe thisMod opmod
+        llvmGlobalName <$> lift (llvmVTableName vspec mod)
+    Right val -> llvmValue val
 llvmValue (ArgConstRef structID ty) = do
     rep <- typeRep ty
     logLLVM $ "llvmValue of constant " ++ show structID
@@ -2334,6 +2388,18 @@ llvmLocalName varName =
 -- | Make an LLVM reference to the specified label.
 llvmLabelName :: String -> String
 llvmLabelName varName = "label %" ++ llvmQuoteIfNecessary varName
+
+
+-- | Make a suitable LLVM name for a vtable.
+llvmVTableName :: VTableSpec -> ModSpec -> Compiler String
+llvmVTableName (VTableSpec trait typ) mod = do
+    -- TODO: include ModSpec of the module where the vtable is defined
+    let typMod = trustFromJust "llvmVTableName" $ typeModule typ
+        traitMod = trustFromJust "llvmVTableName" $ typeModule trait
+    return $
+        "#vtable#" ++ showModSpec typMod
+        ++ "#" ++ showModSpec traitMod
+        ++ "#" ++ showModSpec mod
 
 
 -- | Format a string as an LLVM string; the Bool indicates whether to add

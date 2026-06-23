@@ -69,8 +69,10 @@ flattenProcBody pd _ = do
                  $ content <$> params
         resources = List.map (resourceName . resourceFlowRes)
                   $ procProtoResources proto
-        ProcDefSrc body = procImpln pd
-
+        body = case procImpln pd of
+                ProcDefSrc body -> body
+                ProcDefAbstract -> []
+                impl -> shouldnt $ "flattenProcBody ProcDefPrim " ++ show impl
         detism = procDetism pd
         inlining = procInlining pd
         impurity = procImpurity pd

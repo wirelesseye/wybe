@@ -128,6 +128,7 @@ It may contain the following sorts of items:
   * [procedure definitions](#procedure-definitions),
   * [constructor declarations](#constructor-declarations),
   * [type declarations](#type-declarations),
+  * [trait declarations and implementations](#traits),
   * [resource declarations](#resource-declarations), and
   * [module declarations](#submodules).
 
@@ -1608,6 +1609,123 @@ def concat(a:list(T), b:list(T)):list(T) =
 This will concatenate lists of any type, but the types of the elements of the
 two input lists must be the same, and the result will be a list of the same
 type.
+
+
+## <a name="traits"></a>Traits
+
+A *trait* specifies operations that a type must provide.  It lets a procedure
+work with any type that has the required operations, while retaining static type
+checking.  Trait calls are dispatched to the implementation for the concrete
+type supplied by the caller.
+
+A module becomes a trait by containing a `trait` declaration.  A trait cannot
+also declare a representation or constructors.  Its required operations are
+declared with `abstract`:
+
+```
+# speaker.wybe
+trait
+
+abstract speak(x:_): string
+```
+
+An abstract declaration has the same prototype syntax as a procedure or
+function declaration, but no body.  It must be in a trait module, and it must
+have exactly one type parameter constrained by that trait.  In the example
+above, `_` is inferred to be that constrained type.  Writing the constraint
+explicitly is useful when there is more than one type variable:
+
+```
+abstract speak(x:T<:_): string
+```
+
+The `T<:_` notation means that `T` may be any type that implements the current
+trait.  More generally, a type variable can be constrained by a named trait:
+
+```
+def speak_twice(x:T<:speaker): string = "$(speak(x)) $(speak(x))"
+```
+
+Trait constraints can be combined.  Here `T` must implement both `speaker` and
+`named`:
+
+```
+def describe_speaker(x:T<:{speaker, named}): string = describe(x)
+```
+
+Using a trait name directly as a parameter type is a shorthand for a type
+variable constrained to that trait, so the first example could instead be
+written as `def say(x:speaker): string = speak(x)`.
+
+### Implementing a trait
+
+Declare that the type defined by the current module implements a trait with:
+
+> `impl` *trait*
+
+For example, a `dog` type can implement `speaker` as follows:
+
+```
+# dog.wybe
+use speaker
+
+impl speaker
+
+pub constructor dog(name:string)
+
+pub def speak(x:_): string = "$(x^name) says woof"
+```
+
+Each abstract operation in `speaker` must have exactly one matching concrete
+procedure or function for `dog`.  Its parameter flows, argument and result
+types, determinism, purity, and resource use must match the abstract
+declaration.  The compiler reports an error if a required operation is missing
+or ambiguous.
+
+An implementation for another type may be declared in any module with:
+
+> `impl` *type* `<:` *trait*
+
+For example, this makes `int` implement a trait declared in a submodule:
+
+```
+module printable {
+    trait
+    abstract render(x:T<:_): string
+}
+
+impl int <: printable
+
+def render(x:int): string = "integer $x"
+```
+
+The implementation procedures are resolved in the module containing the
+`impl` declaration.  If there are matching procedures imported from elsewhere,
+the local matching procedure is preferred.
+
+### Default trait operations
+
+A trait may give an abstract operation a default implementation by declaring a
+concrete procedure or function in the trait module with the same signature.
+Types implementing the trait use that default unless their implementation
+module supplies its own matching operation:
+
+```
+# greeter.wybe
+trait
+
+abstract greet(x:T<:_): string
+
+pub def greet(x:_): string = "default greeting"
+
+# silent.wybe
+use greeter
+
+impl greeter
+```
+
+Here `greet(silent)` returns `"default greeting"`.  A concrete implementation
+in `silent` named `greet` with the matching signature overrides the default.
 
 
 ## <a name="resources"></a>Resources

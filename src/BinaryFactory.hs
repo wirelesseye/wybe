@@ -75,6 +75,7 @@ instance Binary PubProcInfo
 instance Binary ModuleInterface
 instance Binary Pragma
 instance Binary StructID
+instance Binary VTableSpec
 
 instance Binary ProcModifiers
 instance Binary Inlining
