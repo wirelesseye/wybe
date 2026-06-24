@@ -3692,9 +3692,9 @@ data StructInfo
     | VTableInfo {
         vtableSize :: Int,          -- ^ The size of the struct in bytes
         vtableData :: [ConstValue], -- ^ Contents of the struct, in memory order
-        vtableExternal :: Bool,
-        vtableSpec :: VTableSpec,
-        vtableMod  :: ModSpec
+        vtableExternal :: Bool,     -- ^ Whether this vtable is defined in other module
+        vtableSpec :: VTableSpec,   -- ^ The vtable spec
+        vtableMod  :: ModSpec       -- ^ The mod where this vtable is defined
     }
     -- | A constant memory block of characters, with 0-termination.  A more
     -- concise representation for this special case.

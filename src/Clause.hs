@@ -350,10 +350,22 @@ getTypeVarMap :: [Placed Param] -> [Placed Exp] -> Map TypeVarName TypeSpec
 getTypeVarMap _ [] = Map.empty
 getTypeVarMap params@(x:xs) args@(y:ys) =
     case (content x, content y) of
-        (Param _ (TypeVariable name _) _ _, Typed exp typ coerce) ->
-            Map.insert name typ $ getTypeVarMap xs ys
+        (Param _ paramType _ _, Typed _ argType _) ->
+            getTypeVarMap' paramType argType `Map.union` getTypeVarMap xs ys
         _ -> getTypeVarMap xs ys
 getTypeVarMap params args = shouldnt $ "getTypeVariableMap " ++ show params ++ show args
+
+getTypeVarMap' :: TypeSpec -> TypeSpec -> Map TypeVarName TypeSpec
+getTypeVarMap' TypeVariable{typeVariableName=name} actual = Map.singleton name actual
+getTypeVarMap' TypeSpec{typeParams=formals} TypeSpec{typeParams=actuals} =
+    List.foldl' Map.union Map.empty $ zipWith getTypeVarMap' formals actuals
+getTypeVarMap' HigherOrderType{higherTypeParams=formals}
+           HigherOrderType{higherTypeParams=actuals} =
+    List.foldl' Map.union Map.empty $ zipWith matchTypeFlows formals actuals
+  where
+    matchTypeFlows formal actual =
+        getTypeVarMap' (typeFlowType formal) (typeFlowType actual)
+getTypeVarMap' _ _ = Map.empty
 
 
 compileVTableArg :: Map TypeVarName TypeSpec -> BoundedTypeVar -> ClauseComp PrimArg

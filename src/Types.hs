@@ -48,8 +48,14 @@ type Validator = StateT ValidatorState Compiler
 
 data ValidatorState = ValidatorState {
     valTypeVarBoundDict :: Map TypeVarName (Set TraitSpec),
+                            -- ^ Mapping from type variable names to
+                            -- their trait bounds.
     valTraitTypeDict :: Map TraitSpec TypeSpec,
+                            -- ^ Generated type variables that look like
+                            -- `Type0<:comparable` for trait types like
+                            -- `comparable`.
     valTypeVarCounter :: Int
+                            -- ^ For numbering type variables.
 }
 
 
@@ -146,18 +152,35 @@ checkDeclIfPublic pname ppos public ty =
 
 
 getBoundedTypeParams :: Map TypeVarName (Set TraitSpec) -> [Placed Param] -> [BoundedTypeVar]
-getBoundedTypeParams varboundDict params = getBoundedTypeParams' varboundDict params []
+getBoundedTypeParams varboundDict params = concatMap boundedParams typeVarNames
+  where
+    paramTypes = paramType . content <$> params
+    typeVarNames = List.nub $ concatMap typeVarNamesIn paramTypes
+    declaredBounds = Map.unionsWith Set.union $ declaredTypeVarBounds <$> paramTypes
+    allBounds = Map.unionWith Set.union varboundDict declaredBounds
+    boundedParams name =
+        [(name, bound) | bound <- Set.toAscList $
+            Map.findWithDefault Set.empty name allBounds]
 
-getBoundedTypeParams' :: Map TypeVarName (Set TraitSpec) -> [Placed Param] -> [BoundedTypeVar] -> [BoundedTypeVar]
-getBoundedTypeParams' _ [] tparams = tparams
-getBoundedTypeParams' varboundDict (x:xs) tparams =
-    case paramType (content x) of
-        TypeVariable{typeVariableName=tvarName} | Map.member tvarName varboundDict -> do
-            let (tvarBound, varboundDict') = Map.updateLookupWithKey (\_ _ -> Nothing) tvarName varboundDict
-            let tvarBounds = trustFromJust "getBoundedTypeParams'" tvarBound
-            getBoundedTypeParams' varboundDict' xs $
-                tparams ++ [(tvarName, bound) | bound <- Set.toAscList tvarBounds]
-        _ -> getBoundedTypeParams' varboundDict xs tparams
+
+-- |Return the type variable names in a type, preserving their occurrence order.
+typeVarNamesIn :: TypeSpec -> [TypeVarName]
+typeVarNamesIn TypeVariable{typeVariableName=name} = [name]
+typeVarNamesIn TypeSpec{typeParams=params} = concatMap typeVarNamesIn params
+typeVarNamesIn HigherOrderType{higherTypeParams=flows} =
+    concatMap (typeVarNamesIn . typeFlowType) flows
+typeVarNamesIn _ = []
+
+
+-- |Collect the bounds stated directly on type variables within a type.
+declaredTypeVarBounds :: TypeSpec -> Map TypeVarName (Set TraitSpec)
+declaredTypeVarBounds TypeVariable{typeVariableName=name,typeVariableBounds=bounds} =
+    Map.singleton name bounds
+declaredTypeVarBounds TypeSpec{typeParams=params} =
+    Map.unionsWith Set.union $ declaredTypeVarBounds <$> params
+declaredTypeVarBounds HigherOrderType{higherTypeParams=flows} =
+    Map.unionsWith Set.union $ declaredTypeVarBounds . typeFlowType <$> flows
+declaredTypeVarBounds _ = Map.empty
 
 
 ----------------------------------------------------------------
@@ -2711,10 +2734,8 @@ modeCheckProcDecl pdef = do
     typeErrors modeErrs
     params' <- updateParamTypes posParams
     let proto' = proto { procProtoParams = params' }
-    let inferredBounds = Map.fromListWith Set.union
-            [ (typeVariableName ty, typeVariableBounds ty)
-            | Param{paramType=ty@TypeVariable{}} <- content <$> params'
-            , not $ Set.null $ typeVariableBounds ty ]
+    let inferredBounds = Map.unionsWith Set.union $
+            declaredTypeVarBounds . paramType . content <$> params'
         boundedTypeParams' = getBoundedTypeParams inferredBounds params'
     let pdef' = pdef { procProto = proto',
                         procTmpCount = tmpCount',

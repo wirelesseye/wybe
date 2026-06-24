@@ -2393,7 +2393,6 @@ llvmLabelName varName = "label %" ++ llvmQuoteIfNecessary varName
 -- | Make a suitable LLVM name for a vtable.
 llvmVTableName :: VTableSpec -> ModSpec -> Compiler String
 llvmVTableName (VTableSpec trait typ) mod = do
-    -- TODO: include ModSpec of the module where the vtable is defined
     let typMod = trustFromJust "llvmVTableName" $ typeModule typ
         traitMod = trustFromJust "llvmVTableName" $ typeModule trait
     return $
