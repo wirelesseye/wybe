@@ -15,10 +15,10 @@ AFTER EVERYTHING:
 
 proc = > public abstract {inline} (0 calls)
 0: trait_implicit_equality_equality.=<0>
-=(x##0:T<:trait_implicit_equality_equality <{}; {}; {0}>, y##0:T<:trait_implicit_equality_equality <{}; {}; {1}>, ?#success##0:wybe.bool, ##vtable##0:opaque)<{}; {}; {}>:
+=(x##0:T<:trait_implicit_equality_equality <{}; {}; {0}>, y##0:T<:trait_implicit_equality_equality <{}; {}; {1}>, ?#success##0:wybe.bool, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
-    ~##vtable##0:opaque@0(~x##0:T<:trait_implicit_equality_equality, ~y##0:T<:trait_implicit_equality_equality, ?#success##0:wybe.bool) #0
+    ~#vtable##0:opaque@0(~x##0:T<:trait_implicit_equality_equality, ~y##0:T<:trait_implicit_equality_equality, ?#success##0:wybe.bool) #0
 
   LLVM code       :
 
