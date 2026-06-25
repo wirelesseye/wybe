@@ -2396,9 +2396,10 @@ llvmVTableName (VTableSpec trait typ) mod = do
     let typMod = trustFromJust "llvmVTableName" $ typeModule typ
         traitMod = trustFromJust "llvmVTableName" $ typeModule trait
     return $
-        "#vtable#" ++ showModSpec typMod
-        ++ "#" ++ showModSpec traitMod
-        ++ "#" ++ showModSpec mod
+        vtableNamePrefix
+        ++ [specialChar] ++ showModSpec typMod
+        ++ [specialChar] ++ showModSpec traitMod
+        ++ [specialChar] ++ showModSpec mod
 
 
 -- | Format a string as an LLVM string; the Bool indicates whether to add

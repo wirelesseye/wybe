@@ -3981,14 +3981,14 @@ data ArgFlowType = Ordinary        -- ^An argument/parameter as written by user
                                    -- ^An argument to pass a resource
                  | Free            -- ^An argument to be passed in the closure
                                    -- environment
-                 | VTable
+                 | VTable          -- ^An argument to pass a vtable
      deriving (Eq,Ord,Generic)
 
 instance Show ArgFlowType where
     show Ordinary = ""
     show (Resource _) = "%"
     show Free = "^"
-    show VTable = "#"
+    show VTable = ""
 
 
 -- |The dataflow direction of an actual argument.

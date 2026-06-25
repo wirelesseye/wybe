@@ -26,7 +26,7 @@ import           Text.ParserCombinators.Parsec.Pos
 import           Util
 import           Resources
 import           UnivSet                           (emptyUnivSet)
-import           Config                            (byteBits, wordSize, wordSizeBytes)
+import           Config                            (byteBits, wordSize, wordSizeBytes, vtableNamePrefix)
 
 
 ----------------------------------------------------------------
@@ -489,7 +489,7 @@ compileVTableParam index (varName, bound) = do
     currMod <- getModuleSpec
     boundTyp <- lookupType "compileVTableParam" Nothing bound
     let boundMod = trustFromJust "compileVTableParam" $ typeModule boundTyp
-    return [PrimParam (PrimVarName "#vtable" index) (Representation CPointer)
+    return [PrimParam (PrimVarName vtableNamePrefix index) (Representation CPointer)
             FlowIn VTable (ParamInfo False emptyGlobalFlows)]
 
 

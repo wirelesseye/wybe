@@ -12,7 +12,7 @@ module Config (sourceExtension, objectExtension, executableExtension,
                bitcodeExtension, assemblyExtension, nativeAssemblyExtension,
                archiveExtension, moduleDirectoryBasename, currentModuleAlias,
                specialChar, specialName, specialName2, initProcName,
-               wordSize, wordSizeBytes, byteBits,
+               vtableNamePrefix, wordSize, wordSizeBytes, byteBits,
                availableTagBits, tagMask, smallestAllocatedAddress,
                minimumSwitchCases, maximumSplitStructSize, magicVersion,
                linkerDeadStripArgs, removeLPVMSection,
@@ -99,6 +99,11 @@ specialName2 front back = front ++ specialChar:back
 -- |The proc to initialise each module (using the top-level code of the module)
 initProcName :: String
 initProcName = ""
+
+
+-- | Prefix used for generated vtable symbols.
+vtableNamePrefix :: String
+vtableNamePrefix = "#vtable"
 
 
 -- |Determining word size of the machine in bits
