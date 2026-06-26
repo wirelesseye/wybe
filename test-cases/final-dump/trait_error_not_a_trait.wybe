@@ -1,1 +1,5 @@
-abstract not_a_trait(x:T<:int): string
+module my_trait {
+    trait
+}
+
+abstract not_a_trait(x:T<:my_trait): string

@@ -96,7 +96,7 @@ validateProcDefTypes name def = do
     let params = procProtoParams proto
     let tvarCount = procFauxTypeVarCount def
     logTypes $ "Validating def of " ++ showProcName name
-    (params', finalState) <- runStateT (traverse (updatePlacedM $ validateParamType name pos public) params)
+    (params', finalState) <- runStateT (traverse (updatePlacedM $ validateParam name pos public) params)
                              $ ValidatorState Map.empty Map.empty tvarCount
     let boundedTypeParams = getBoundedTypeParams (valTypeVarBoundDict finalState) params'
     return $ def { procProto = proto { procProtoParams = params' }
@@ -104,32 +104,53 @@ validateProcDefTypes name def = do
                  , procBoundedTypeParams = boundedTypeParams }
 
 
-validateParamType :: Ident -> OptPos -> Bool -> Param -> Validator Param
-validateParamType pname ppos public param = do
+validateParam :: Ident -> OptPos -> Bool -> Param -> Validator Param
+validateParam pname ppos public param = do
     let ty = paramType param
     checkDeclIfPublic pname ppos public ty
     logValidator $ "Checking type " ++ show ty ++ " of param " ++ show param
-    ty' <- lift $ lookupType "proc declaration" ppos ty
-    ty'' <- case ty' of
-        TypeSpec{} -> do
-            traitType <- lift $ isTraitType ty'
-            if traitType
-                then validateParamTraitType ty' param
-                else return ty'
-        TypeVariable name bounds | not (Set.null bounds) -> do
-            modify $ \st -> st {
-                valTypeVarBoundDict = Map.insertWith Set.union name
-                    bounds (valTypeVarBoundDict st) }
-            return ty'
-        TypeVariable{} -> return ty'
-        _ -> return ty'
-    let param' = param { paramType = ty'' }
+    ty' <- validateParamType ppos ty
+    let param' = param { paramType = ty' }
     logValidator $ "Param is " ++ show param'
     return param'
 
 
-validateParamTraitType :: TraitSpec -> Param -> Validator TypeSpec
-validateParamTraitType tspec param = do
+validateParamType :: OptPos -> TypeSpec -> Validator TypeSpec
+validateParamType ppos ty = do
+    ty' <- lift $ lookupType "proc declaration" ppos ty
+    case ty' of
+        TypeSpec{typeParams=params} -> do
+            traitType <- lift $ isTraitType ty'
+            params' <- mapM (validateParamType ppos) params
+            if traitType
+                then validateParamTraitType ty'
+                else return ty'{typeParams=params'}
+        TypeVariable name bounds -> do
+            validateTypeVarBounds ppos bounds
+            modify $ \st -> st {
+                valTypeVarBoundDict = Map.insertWith Set.union name
+                    bounds (valTypeVarBoundDict st) }
+            return ty'
+        HigherOrderType{higherTypeParams=tfs} -> do
+            types' <- mapM (validateParamType ppos . typeFlowType) tfs
+            return ty'{higherTypeParams=zipWith setTypeFlowType types' tfs}
+        _ -> return ty'
+
+
+validateTypeVarBounds :: OptPos -> Set TraitSpec -> Validator ()
+validateTypeVarBounds ppos bounds =
+    mapM_ validateTypeVarBound $ Set.toAscList bounds
+  where
+    validateTypeVarBound bound = do
+        validTrait <- lift $ isTraitType bound
+        unless (validTrait || bound == InvalidType) $
+            lift $ message Error
+                ("Invalid type variable bound: " ++ show bound ++ " is not a trait")
+                ppos
+
+
+validateParamTraitType :: TraitSpec -> Validator TypeSpec
+validateParamTraitType tspec = do
     traitTypeDict <- gets valTraitTypeDict
     case Map.lookup tspec traitTypeDict of
         Just typ -> return typ
