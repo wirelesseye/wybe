@@ -236,6 +236,13 @@ compileAbstractBody pSpec index params detism = do
             find (\(_,trait) -> typeModule trait == Just thisMod) (Map.keys vTableParamDict)
     let vTableParam = trustFromJust "compileAbstractBody" $ Map.lookup typeVarBound vTableParamDict
     let vTableArg = primParamToArg vTableParam
+    procDef <- lift $ getProcDef pSpec
+    let forwardedVTableArgs =
+            [ primParamToArg $ trustFromJust "compileAbstractBody" $
+                  Map.lookup boundedTypeParam vTableParamDict
+            | boundedTypeParam <- procBoundedTypeParams procDef
+            , boundedTypeParam /= typeVarBound
+            ]
     callSiteID <- gets nextCallSiteID
     impurity <- gets clauseImpurity
     -- Compile each source-level parameter into its primitive calling form;
@@ -243,7 +250,8 @@ compileAbstractBody pSpec index params detism = do
     let args = List.map paramToVar params
     args' <- concat <$> mapM (placedApply compileArg) args
     gFlows <- lift $ getProcGlobalFlows pSpec
-    let prim = Unplaced $ PrimVirtualCall callSiteID vTableArg index impurity args' gFlows
+    let prim = Unplaced $ PrimVirtualCall callSiteID vTableArg index impurity
+                    (args' ++ forwardedVTableArgs) gFlows
     finishStmt
     end <- closingStmts detism params
     return $ ProcBody (prim:end) NoFork
