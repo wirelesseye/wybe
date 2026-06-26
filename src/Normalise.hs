@@ -178,7 +178,7 @@ normaliseTraitImpls :: Compiler ()
 normaliseTraitImpls = do
     knownTraitImpls <- getModuleImplementationField modKnownTraitImpls
     knownTraitImpls' <- Map.fromList <$>
-        traverse (\(k, v) -> (\k' -> (k', v)) <$> normaliseVTableSpec k v) (Map.toList knownTraitImpls)
+        traverse (uncurry normaliseTraitImpl) (Map.toList knownTraitImpls)
     updateImplementation (\impl -> impl{ modKnownTraitImpls=knownTraitImpls' })
     thisMod <- getModuleSpec
     let traitImpls = Map.map (fromMaybe thisMod . content) knownTraitImpls'
@@ -186,14 +186,17 @@ normaliseTraitImpls = do
 
 
 -- |Resolve an unqualified vtable specification once its defining module is known.
-normaliseVTableSpec :: VTableSpec -> Placed (Maybe ModSpec) -> Compiler VTableSpec
-normaliseVTableSpec vspec@(VTableSpec trait typ) mod =
+normaliseTraitImpl :: VTableSpec -> Placed (Maybe ModSpec) -> Compiler (VTableSpec, Placed (Maybe ModSpec))
+normaliseTraitImpl vspec@(VTableSpec trait typ) mod =
     case content mod of
-        Just _ -> return vspec
+        Just _ -> return (vspec, mod)
         Nothing -> do
             typ' <- lookupType "trait impl" Nothing typ
             trait' <- lookupType "trait impl" Nothing trait
-            return $ VTableSpec trait' typ'
+            validTrait <- isTraitType trait'
+            unless validTrait $ errmsg (place mod) $
+                "Invalid trait implementation: " ++ show trait' ++ " is not a trait"
+            return (VTableSpec trait' typ', mod)
 
 
 -- |Normalise a nested submodule containing the specified items.
