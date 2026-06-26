@@ -1041,7 +1041,7 @@ typeErrors errs = do
 localBodyProcs :: ProcImpln -> Set RoughProcSpec
 localBodyProcs (ProcDefSrc body) =
     foldStmts localCalls (const . const) Set.empty body
-localBodyProcs (ProcDefAbstract) = Set.empty
+localBodyProcs ProcDefAbstract = Set.empty
 localBodyProcs ProcDefPrim{} =
     shouldnt "Type checking compiled code"
 
@@ -1867,21 +1867,27 @@ ultimateExp expr = expr
 --    have been resolved.
 typecheckCalls :: [StmtTypings] -> [StmtTypings] -> Bool -> [Placed Stmt]
                -> Typed ()
-typecheckCalls [] [] _ foreigns =
+typecheckCalls = typecheckCalls' False
+
+
+-- |Like 'typecheckCalls', but with a flag to force its first call to be checked.
+typecheckCalls' :: Bool -> [StmtTypings] -> [StmtTypings] -> Bool
+                   -> [Placed Stmt] -> Typed ()
+typecheckCalls' _ [] [] _ foreigns =
     mapM_ (placedApply validateForeign) foreigns
-typecheckCalls [] residue True foreigns =
-    typecheckCalls residue [] False foreigns
-typecheckCalls [] residue@(overloaded:_) False foreigns = do
+typecheckCalls' _ [] residue True foreigns =
+    typecheckCalls' False residue [] False foreigns
+typecheckCalls' _ [] residue@(overloaded:_) False foreigns = do
     let (typings@StmtTypings{typingInfos=infos},rest) = findMinimumTyping residue
     logTyped $ "Recursively checking types with " ++ show typings
     let (moves, nonMoves) = List.partition isMove infos
     let (partials, realCalls) = List.partition isPartial nonMoves
-    List.foldr (typecheckCalls' typings rest)
-        (typeError (overloadErr overloaded) >> typecheckCalls [] [] False foreigns)
+    List.foldr (typecheckCalls'' typings rest)
+        (typeError (overloadErr typings) >> typecheckCalls [] [] False foreigns)
         [moves, realCalls, partials]
   where
-    typecheckCalls' _ _ [] alt = alt
-    typecheckCalls' typings rest infos alt = do
+    typecheckCalls'' _ _ [] alt = alt
+    typecheckCalls'' typings rest infos alt = do
         typings' <- snd <$$> mapM (getTyping . typecheckCallWithInfo typings rest) infos
         case List.filter (List.null . typingErrs) typings' of
             [typing] -> do
@@ -1892,8 +1898,8 @@ typecheckCalls [] residue@(overloaded:_) False foreigns = do
                 alt
     typecheckCallWithInfo typings rest info = do
         logTyped $ "-> Trying info " ++ show info
-        typecheckCalls (typings{typingInfos=[info]}:rest) [] False foreigns
-typecheckCalls (stmtTyping@(StmtTypings pstmt typs):calls)
+        typecheckCalls' True (typings{typingInfos=[info]}:rest) [] False foreigns
+typecheckCalls' forceFirst (stmtTyping@(StmtTypings pstmt typs):calls)
         residue chg foreigns = do
     logTyped $ "Type checking call " ++ show pstmt
     logTyped $ "Candidate types:\n    " ++ intercalate "\n    " (show <$> typs)
@@ -1925,13 +1931,20 @@ typecheckCalls (stmtTyping@(StmtTypings pstmt typs):calls)
             logTyped "Type error: no valid types for call"
             typeErrors matchErrs
         [(_,typing)] -> do
-            put typing
-            logTyping "Resulting typing = "
-            typecheckCalls calls residue True foreigns
+            let matchProcInfos = fst <$> preferredTypes
+                stmtTyping' = stmtTyping {typingInfos = matchProcInfos}
+            if not forceFirst && (not . Set.null $ unsolvedInputDependencies stmtTyping' (calls ++ residue))
+            then do
+                logTyped "Delaying call until its unresolved input dependencies is typed"
+                typecheckCalls' False calls (stmtTyping':residue) chg foreigns
+            else do
+                put typing
+                logTyping "Resulting typing = "
+                typecheckCalls' False calls residue True foreigns
         _ -> do
             let matchProcInfos = fst <$> preferredTypes
             let stmtTyping' = stmtTyping {typingInfos = matchProcInfos}
-            typecheckCalls calls (stmtTyping':residue)
+            typecheckCalls' False calls (stmtTyping':residue)
                 (chg || matchProcInfos /= typs) foreigns
 
 
@@ -1990,19 +2003,26 @@ findMinimumTyping (typing:typings) = go typings typing []
         | otherwise
         = go rest selected (typing:acc)
     priority typing others =
-        (upstreamDependencies typing others,
+        (Set.size (unsolvedInputDependencies typing others),
          length $ List.filter (not . isPartial) $ typingInfos typing)
-    -- A call that consumes an unresolved call's output must be type checked
-    -- after its producer.  This preserves the concrete type information that
-    -- the consumer needs for overload resolution.
-    upstreamDependencies typing others = Set.size $
-        typingInputs typing `Set.intersection`
-        Set.unions (List.map typingOutputs others)
-    typingInputs = stmtsInputs . (:[]) . typingStmt
-    typingOutputs StmtTypings{typingStmt=pstmt} =
-        case content pstmt of
-            ProcCall _ _ _ args -> pexpListOutputs args
-            _ -> Set.empty
+
+
+-- |The set of values that consumed by a call and produced by other unresolved calls
+unsolvedInputDependencies :: StmtTypings -> [StmtTypings] -> Set VarName
+unsolvedInputDependencies typing unresolved =
+    typingInputs typing `Set.intersection`
+    Set.unions (List.map typingOutputs unresolved)
+
+
+typingInputs :: StmtTypings -> Set VarName
+typingInputs = stmtsInputs . (:[]) . typingStmt
+
+
+typingOutputs :: StmtTypings -> Set VarName
+typingOutputs StmtTypings{typingStmt=pstmt} =
+    case content pstmt of
+        ProcCall _ _ _ args -> pexpListOutputs args
+        _ -> Set.empty
 
 isPartial :: CallInfo -> Bool
 isPartial FirstInfo{fiPartial=p} = p
