@@ -1,6 +1,4 @@
-module person {
-    trait
-
+type person trait {
     abstract person_name(x:_): string
 }
 
@@ -12,9 +10,7 @@ impl student <: person
 
 def person_name(x:student): string = x^name
 
-module group {
-    trait
-
+type group trait {
     abstract add_person(!x:_, person: person)
 }
 

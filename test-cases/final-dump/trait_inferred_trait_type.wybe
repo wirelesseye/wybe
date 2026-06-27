@@ -1,6 +1,4 @@
-module my_trait {
-    trait
-
+type my_trait trait {
     abstract my_method(x:_): _
 }
 

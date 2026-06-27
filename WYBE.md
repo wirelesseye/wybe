@@ -1629,6 +1629,17 @@ trait
 abstract speak(x:_): string
 ```
 
+As a convenience, a trait submodule can be declared with a `type` declaration:
+
+```
+type speaker trait {
+    abstract speak(x:_): string
+}
+```
+
+This is equivalent to declaring a submodule named `speaker` whose first item is
+`trait`.
+
 An abstract declaration has the same prototype syntax as a procedure or
 function declaration, but no body.  It must be in a trait module, and it must
 have exactly one type parameter constrained by that trait.  In the example
@@ -1689,8 +1700,7 @@ An implementation for another type may be declared in any module with:
 For example, this makes `int` implement a trait declared in a submodule:
 
 ```
-module printable {
-    trait
+type printable trait {
     abstract render(x:T<:_): string
 }
 

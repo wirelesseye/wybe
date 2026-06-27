@@ -143,9 +143,23 @@ typeItem v = do
     pos <- tokenPosition <$> ident "type"
     modifiers <- List.foldl processTypeModifier defaultTypeModifiers
                  <$> modifierList
-    proto <- TypeProto <$> moduleName <*> typeVarNames
-    (imp, items) <- typeImpln <|> typeCtors
-    return $ TypeDecl v proto modifiers imp items (Just pos)
+    typeName <- moduleName
+    typeTraitItem v typeName modifiers pos <|> do
+        params <- typeVarNames
+        let proto = TypeProto typeName params
+        (imp, items) <- typeImpln <|> typeCtors
+        return $ TypeDecl v proto modifiers imp items (Just pos)
+
+
+-- | Type declaration shorthand for submodule traits.
+typeTraitItem :: Visibility -> Ident -> TypeModifiers -> SourcePos -> Parser Item
+typeTraitItem v typeName modifiers pos = do
+    keypos <- tokenPosition <$> ident "trait"
+    params <- typeVarNames
+    body <- betweenB Brace items
+    return $ ModuleDecl v typeName
+        (TraitDecl params modifiers (Just keypos) : body)
+        (Just pos)
 
 
 -- | Module type representation declaration

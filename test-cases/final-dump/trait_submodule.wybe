@@ -1,6 +1,4 @@
-module printable {
-    trait
-
+type printable trait {
     abstract render(x:T<:_): string
 }
 
