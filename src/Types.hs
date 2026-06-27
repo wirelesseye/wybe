@@ -2188,17 +2188,16 @@ invalidType (HigherOrderType _ tfs) = any (invalidType . typeFlowType) tfs
 invalidType _ = False
 
 
--- |A generic caller type can be passed to another generic parameter only when
--- it is known to meet all of that parameter's trait constraints.
+-- |A bounded generic caller type cannot be passed to a concrete parameter just
+-- because it has trait bounds.  Generic-to-generic calls are allowed through to
+-- unification, which can merge the two variables' bounds.
 typeVarMismatch :: TypeSpec -> TypeSpec -> Typed Bool
 typeVarMismatch callerTy@TypeVariable{} calleeTy = do
     callerBounds <- typeVarBounds callerTy
     if Set.null callerBounds
         then return False
         else case calleeTy of
-            TypeVariable{} -> do
-                calleeBounds <- typeVarBounds calleeTy
-                return $ not $ calleeBounds `Set.isSubsetOf` callerBounds
+            TypeVariable{} -> return False
             _ -> return True
 typeVarMismatch _ _ = return False
 
