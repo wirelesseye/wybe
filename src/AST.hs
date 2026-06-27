@@ -117,7 +117,7 @@ module AST (
   setDetism, setInline, setImpurity, setVariant,
   ProcVariant(..), Inlining(..), Impurity(..),
   addProc, addProcDef, addAbstractProc, addTraitImpl, lookupProc, publicProc, callTargets,
-  outputVariableName, outputStatusName,
+  abstractProcs, outputVariableName, outputStatusName,
   envParamName, envPrimParam, makeGlobalResourceName,
   showBody, showPlacedPrims, showStmt, showBlock, showProcDef,
   showProcIdentifier, showProcName,
@@ -1683,6 +1683,18 @@ callTargets modspec name = do
       showModSpec modspec ++ "' matches: " ++
       intercalate ", " (List.map show pspecs)
     return pspecs
+
+
+-- |Return the abstract procs defined in a trait module
+abstractProcs :: TraitSpec -> Compiler [(ProcSpec, ProcDef)]
+abstractProcs trait = do
+    let traitMod = trustFromJust "abstractProcSpecsForVTable" $ typeModule trait
+        procSpecWithDef (def, ident) =
+            (ProcSpec traitMod (procName def) ident generalVersion, def)
+    procsInTraitMod <- getModuleImplementationField (List.map procSpecWithDef
+            <$> concatMap (`zip` [0..]) . Map.elems . modProcs) `inModule` traitMod
+    return $ List.sortOn (procAbstract . snd)
+        (List.filter (isJust . procAbstract . snd) procsInTraitMod)
 
 
 -- |Apply the given function to the current module implementation.

@@ -1191,11 +1191,7 @@ typecheckLocalTraitImpl :: VTableSpec -> Placed (Maybe ModSpec)
 typecheckLocalTraitImpl vspec@(VTableSpec trait _) traitImpl = do
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
     let pos = place traitImpl
-    let procSpecWithDef (def, id) = (ProcSpec traitMod (procName def) id generalVersion, def)
-    procsInTraitMod <- getModuleImplementationField (List.map procSpecWithDef <$>
-            concatMap (`zip` [0..]) . Map.elems . modProcs) `inModule` traitMod
-    let absProcs = List.sortOn (procAbstract . snd)
-            $ List.filter (isJust . procAbstract . snd) procsInTraitMod
+    absProcs <- abstractProcs trait
     matched <- mapM (uncurry (typecheckTraitImplProc pos vspec)) absProcs
     let errs = concatMap errList matched
     return $ if List.null errs

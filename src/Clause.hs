@@ -26,7 +26,8 @@ import           Text.ParserCombinators.Parsec.Pos
 import           Util
 import           Resources
 import           UnivSet                           (emptyUnivSet)
-import           Config                            (byteBits, wordSize, wordSizeBytes, vtableNamePrefix)
+import           Config                            (byteBits, wordSize, wordSizeBytes,
+                                                    vtableNamePrefix, adapterNamePostfix)
 
 
 ----------------------------------------------------------------
@@ -145,6 +146,10 @@ evalClauseComp impurity clcomp =
 -- |Compile a ProcDefSrc to a ProcDefPrim, ie, compile a proc
 --  definition in source form to one in clausal form.
 compileProc :: ProcDef -> Int -> Compiler ProcDef
+compileProc proc@ProcDef{procImpln=ProcDefPrim{}} _ =
+    -- Vtable generation may add already-compiled adapter procs before the
+    -- normal clause pass reaches this module
+    return proc
 compileProc proc procID =
     evalClauseComp (procImpurity proc) $ do
         let body = case procImpln proc of
@@ -155,7 +160,7 @@ compileProc proc procID =
         let procName = procProtoName proto
         let params = content <$> procProtoParams proto
         let boundedTypeParams = procBoundedTypeParams proc
-        vTableParams <- concat <$> lift (zipWithM compileVTableParam [0..] boundedTypeParams)
+        let vTableParams = [vtableParam i | (i, _) <- zip [0..] boundedTypeParams]
         let vTableParamDict = Map.fromList (zip boundedTypeParams vTableParams)
         modify (\st -> st {nextCallSiteID=procCallSiteCount proc
                           ,vTableParamDict=vTableParamDict})
@@ -492,13 +497,10 @@ compileParam allFlows startVars endVars procName idx param@(Param name ty flow f
     outIdx = if flowsIn flow then idx + 1 else idx
 
 
-compileVTableParam :: Int -> BoundedTypeVar -> Compiler [PrimParam]
-compileVTableParam index (varName, bound) = do
-    currMod <- getModuleSpec
-    boundTyp <- lookupType "compileVTableParam" Nothing bound
-    let boundMod = trustFromJust "compileVTableParam" $ typeModule boundTyp
-    return [PrimParam (PrimVarName vtableNamePrefix index) (Representation CPointer)
-            FlowIn VTable (ParamInfo False emptyGlobalFlows)]
+vtableParam :: Int -> PrimParam
+vtableParam index =
+    PrimParam (PrimVarName vtableNamePrefix index) (Representation CPointer)
+            FlowIn VTable (ParamInfo False emptyGlobalFlows)
 
 
 compileTraitImpls :: ModSpec -> Compiler ()
@@ -516,8 +518,15 @@ compileVTable vspec opmod = do
     thisMod <- getModuleSpec
     traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs `inModule` fromMaybe thisMod opmod
     let procSpecs = trustFromJust "compileVTable" $ Map.lookup vspec traitImplProcSpecs
+    procSpecs' <- case opmod of
+        Nothing -> adaptTraitImplProcs vspec procSpecs
+        Just _  -> return procSpecs
+    when (isNothing opmod && procSpecs' /= procSpecs) $
+        updateModImplementation $ \imp -> imp {
+            modTraitImplProcs = Map.insert vspec procSpecs'
+                (modTraitImplProcs imp) }
     let sz = wordSizeBytes * length procSpecs
-        values = List.map FnPointerStructMember procSpecs
+        values = List.map FnPointerStructMember procSpecs'
     case opmod of
         Just mod -> do
             ancestor <- isAncestor thisMod mod
@@ -525,6 +534,189 @@ compileVTable vspec opmod = do
                 then return Nothing -- Don't generate duplicated vtables in the same LLVM module
                 else Just <$> recordConstStruct (VTableInfo sz values True vspec mod) Nothing
         Nothing -> Just <$> recordConstStruct (VTableInfo sz values False vspec thisMod) Nothing
+
+
+-- |Return the procedure specs to store in a locally-defined vtable.  A concrete
+-- implementation can have a different ABI from the corresponding abstract
+-- method because abstract type variables use defaultTypeRepresentation.  When
+-- that happens, store a generated adapter in the vtable instead.
+adaptTraitImplProcs :: VTableSpec -> [ProcSpec] -> Compiler [ProcSpec]
+adaptTraitImplProcs vspec@(VTableSpec trait typ) procSpecs = do
+    absProcs <- List.map fst <$> abstractProcs trait
+    unless (sameLength absProcs procSpecs) $
+        shouldnt $ "vtable proc count mismatch for " ++ show vspec
+            ++ ": abstract procs " ++ show absProcs
+            ++ ", implementation procs " ++ show procSpecs
+    zipWithM (adaptTraitImplProc vspec) absProcs procSpecs
+
+
+adaptTraitImplProc :: VTableSpec -> ProcSpec -> ProcSpec -> Compiler ProcSpec
+adaptTraitImplProc vspec absProcSpec implProcSpec = do
+    absProcDef <- getProcDef absProcSpec
+    implProcDef <- getProcDef implProcSpec
+    let adapterParams = vtableSlotParams vspec absProcDef
+        implParams = procABIParams implProcDef
+    adapterReps <- abiParamReps adapterParams
+    implReps <- abiParamReps implParams
+    let compatible = adapterReps == implReps
+    logMsg Clause $ "Vtable ABI for " ++ show implProcSpec
+        ++ ": abstract " ++ show adapterReps
+        ++ ", concrete " ++ show implReps
+    if compatible
+        then return implProcSpec
+        else generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef
+
+
+-- |The ABI used by a virtual call through a vtable slot.  This is the abstract
+-- method's primitive parameters, except that the dispatching vtable parameter
+-- itself is supplied by the loaded vtable and is not passed to the target proc.
+vtableSlotParams :: VTableSpec -> ProcDef -> [PrimParam]
+vtableSlotParams (VTableSpec trait _) absProcDef = do
+    let forwardedBounds =
+            [ bounded
+            | bounded@(_, bound) <- procBoundedTypeParams absProcDef
+            , typeModule bound /= typeModule trait
+            ]
+    let forwardedVTableParams = [vtableParam i | (i, _) <- zip [0..] forwardedBounds]
+    procOrdinaryABIParams absProcDef ++ forwardedVTableParams
+
+
+-- |Return the canonical primitive ABI parameters for a proc, including the
+-- vtable parameters needed for its bounded type variables.
+procABIParams :: ProcDef -> [PrimParam]
+procABIParams procDef =
+    procOrdinaryABIParams procDef ++
+    [vtableParam i | (i, _) <- zip [0..] (procBoundedTypeParams procDef)]
+
+
+-- |Return the canonical primitive ABI parameters for the source-level ordinary
+-- parameters of a proc.
+procOrdinaryABIParams :: ProcDef -> [PrimParam]
+procOrdinaryABIParams =
+    compileABIParams . (content <$>) . procProtoParams . procProto
+
+
+-- |Convert source-level parameters to their canonical primitive ABI shape,
+-- independent of the SSA numbering used by a compiled proc body.
+compileABIParams :: [Param] -> [PrimParam]
+compileABIParams = concatMap compileABIParam
+  where
+    compileABIParam (Param name ty flow ftype) =
+        [PrimParam (PrimVarName name 0) ty FlowIn ftype (ParamInfo False emptyGlobalFlows)
+            | flowsIn flow]
+        ++
+        [PrimParam (PrimVarName name (outNum flow)) ty FlowOut ftype (ParamInfo False emptyGlobalFlows)
+            | flowsOut flow]
+    outNum flow = if flowsIn flow then 1 else 0
+
+
+-- |Return the runtime type representations of the real ABI parameters, omitting
+-- any phantom parameters.
+abiParamReps :: [PrimParam] -> Compiler [TypeRepresentation]
+abiParamReps params = do
+    real <- realParams params
+    mapM (typeRepresentation . primParamType) real
+
+
+generateAdapter :: VTableSpec -> ProcDef -> [PrimParam] -> ProcSpec -> ProcDef
+                  -> Compiler ProcSpec
+generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
+    adapterMod <- getModuleSpec
+    gFlows <- getProcGlobalFlows implProcSpec
+    let adapterOrdinaryParams = procOrdinaryABIParams absProcDef
+        implOrdinaryParams = procOrdinaryABIParams implProcDef
+    unless (sameLength adapterOrdinaryParams implOrdinaryParams) $
+        shouldnt $ "adapter ordinary param count mismatch for "
+            ++ show implProcSpec ++ ": abstract params "
+            ++ show adapterOrdinaryParams ++ ", implementation params "
+            ++ show implOrdinaryParams
+    let (preCasts, implOrdinaryArgs, postCasts) =
+            unzip3 $ zipWith3 adapterArgBridge [0..]
+                adapterOrdinaryParams implOrdinaryParams
+        implCallArgs = implOrdinaryArgs
+            ++ adapterVTableArgs vspec absProcDef implProcDef adapterParams
+    let adapterName = procName absProcDef ++ adapterNamePostfix
+        proto = PrimProto adapterName adapterParams
+            $ makeGlobalFlows (zip [0..] adapterParams)
+                (procProtoResources $ procProto absProcDef)
+        body = ProcBody
+            (concat preCasts
+                ++ [Unplaced $ PrimCall 0 implProcSpec (procImpurity implProcDef)
+                    implCallArgs gFlows]
+                ++ concat postCasts)
+            NoFork
+        pSpec = ProcSpec adapterMod adapterName 0 generalVersion
+        adapter = ProcDef adapterName (ProcProto adapterName [] [])
+            (ProcDefPrim pSpec proto body emptyProcAnalysis Map.empty)
+            Nothing 0 1 Map.empty Private Nothing (procDetism implProcDef)
+            NoInline (procImpurity implProcDef) GeneratedProc
+            (initSuperprocSpec Private) Map.empty [] 0
+    adapterSpec <- addProcDef adapter `inModule` adapterMod
+    updateProcDef
+        (\proc -> case procImpln proc of
+            prim@ProcDefPrim{} -> proc {
+                procImpln = prim { procImplnProcSpec = adapterSpec } }
+            _ -> proc)
+        adapterSpec
+    logMsg Clause $ "Generated vtable adapter " ++ show adapterSpec
+        ++ " for " ++ show implProcSpec ++ " in " ++ show vspec
+    return adapterSpec
+
+
+-- |Bridge one ordinary adapter parameter to the corresponding implementation
+-- parameter.  The adapter exposes the vtable slot ABI, so any concrete
+-- implementation type with a different source type must be reached through an
+-- explicit LPVM cast.
+adapterArgBridge :: Int -> PrimParam -> PrimParam
+                 -> ([Placed Prim], PrimArg, [Placed Prim])
+adapterArgBridge idx adapterParam implParam
+    | primParamFlow adapterParam /= primParamFlow implParam =
+        shouldnt $ "adapter param flow mismatch: " ++ show adapterParam
+            ++ " vs " ++ show implParam
+    | primParamType adapterParam == primParamType implParam =
+        ([], primParamToArg adapterParam, [])
+    | otherwise =
+        case primParamFlow implParam of
+            FlowIn ->
+                ([Unplaced $ primCast implOut adapterIn], implIn, [])
+            FlowOut ->
+                ([], implOut, [Unplaced $ primCast adapterOut implIn])
+            flow ->
+                shouldnt $ "unexpected adapter param flow " ++ show flow
+  where
+    implTy = primParamType implParam
+    implFlowType = primParamFlowType implParam
+    tmpName = PrimVarName
+        (primVarName (primParamName implParam) ++ adapterNamePostfix ++ show idx)
+        0
+    implIn = ArgVar tmpName implTy FlowIn implFlowType False
+    implOut = ArgVar tmpName implTy FlowOut implFlowType False
+    adapterIn = primParamToArg adapterParam
+    adapterOut = primParamToArg adapterParam
+
+
+adapterVTableArgs :: VTableSpec -> ProcDef -> ProcDef -> [PrimParam] -> [PrimArg]
+adapterVTableArgs vspec@(VTableSpec trait _) absProcDef implProcDef adapterParams =
+    snd $ List.mapAccumL vtableArg forwardedParams (procBoundedTypeParams implProcDef)
+  where
+    dispatchTraitMod = typeModule trait
+    forwardedParams =
+        [ param
+        | (_, param) <- zip forwardedBounds
+            (List.filter ((== VTable) . primParamFlowType) adapterParams)
+        ]
+    forwardedBounds =
+        [ bounded
+        | bounded@(_, bound) <- procBoundedTypeParams absProcDef
+        , typeModule bound /= dispatchTraitMod
+        ]
+    vtableArg params (_, bound)
+        | typeModule bound == dispatchTraitMod =
+            (params, ArgVTable (Left vspec) (Representation CPointer))
+        | otherwise = case params of
+            param:rest -> (rest, ArgVTable (Right $ primParamToArg param)
+                (Representation CPointer))
+            [] -> shouldnt $ "missing forwarded vtable parameter for bound " ++ show bound
 
 
 -- |A synthetic output parameter carrying the test result

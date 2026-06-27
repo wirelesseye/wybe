@@ -12,7 +12,7 @@ module Config (sourceExtension, objectExtension, executableExtension,
                bitcodeExtension, assemblyExtension, nativeAssemblyExtension,
                archiveExtension, moduleDirectoryBasename, currentModuleAlias,
                specialChar, specialName, specialName2, initProcName,
-               vtableNamePrefix, wordSize, wordSizeBytes, byteBits,
+               vtableNamePrefix, adapterNamePostfix, wordSize, wordSizeBytes, byteBits,
                availableTagBits, tagMask, smallestAllocatedAddress,
                minimumSwitchCases, maximumSplitStructSize, magicVersion,
                linkerDeadStripArgs, removeLPVMSection,
@@ -104,6 +104,11 @@ initProcName = ""
 -- | Prefix used for generated vtable symbols.
 vtableNamePrefix :: String
 vtableNamePrefix = "#vtable"
+
+
+-- | Postfix used for generated adapter symbols.
+adapterNamePostfix :: String
+adapterNamePostfix = "#adapter"
 
 
 -- |Determining word size of the machine in bits
