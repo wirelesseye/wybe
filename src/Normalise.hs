@@ -168,6 +168,8 @@ normaliseItem item@(TraitImpl typ trait pos) = do
     mspec <- getModuleSpec
     params <- getModule modParams
     let typ' = fromMaybe (TypeSpec [] currentModuleAlias []) typ
+    when (genericType typ') $
+        nyi "generic trait implementations"
     addTraitImpl pos (VTableSpec trait typ') Nothing
 normaliseItem (PragmaDecl prag) =
     addPragma prag

@@ -114,7 +114,7 @@ implItem :: Parser Item
 implItem = do
     keypos <- tokenPosition <$> ident "impl"
     typ <- optionMaybe (try $ do
-            typ' <- primaryTerm >>= parseWith termToTypeSpec
+            typ' <- limitedTerm implTypePrecedence >>= parseWith termToTypeSpec
             symbol "<:"
             pure typ'
         )
@@ -745,6 +745,12 @@ lowestStmtSeqPrecedence = -4
 -- |Lowest (loosest) operator precedence of a proc/function prototype
 prototypePrecedence :: Int
 prototypePrecedence = 10
+
+
+-- |Lowest operator precedence for the implementation type in a trait impl.
+-- This excludes the following '<:' marker while still allowing type arguments.
+implTypePrecedence :: Int
+implTypePrecedence = 12
 
 
 -- |Prefix operator symbols; these all bind very tightly
