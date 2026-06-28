@@ -1,0 +1,7 @@
+use trait_higher_order_mapper
+
+impl trait_higher_order_mapper
+
+pub constructor trait_higher_order_box(name:string)
+
+pub def apply_to_self(x:_, f:(_, ?string)): string = f(x)
