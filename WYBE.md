@@ -1640,18 +1640,32 @@ type speaker trait {
 This is equivalent to declaring a submodule named `speaker` whose first item is
 `trait`.
 
-An abstract declaration has the same prototype syntax as a procedure or
-function declaration, but no body.  It must be in a trait module, and it must
-have exactly one type parameter constrained by that trait.  In the example
-above, `_` is inferred to be that constrained type.  Writing the constraint
-explicitly is useful when there is more than one type variable:
+An abstract procedure or function declaration has the same prototype syntax as
+a procedure or function declaration, but no body.  It must be in a trait module,
+and it must have exactly one type parameter constrained by that trait.  In the
+example above, `_` is an alias for the current trait, so the abstract function
+could instead be written as:
 
 ```
-abstract speak(x:T<:_): string
+abstract speak(x:speaker): string
+```
+
+Using a trait directly as a parameter type is a shorthand for a type variable
+constrained to that trait.  Writing the constraint explicitly is useful when
+there is more than one parameter with the trait bound. 
+
+```
+abstract speak(x:_, y:_): string
+
+# is equivalent to:
+
+abstract speak(x:T<:speaker, y:T): string
+
 ```
 
 The `T<:_` notation means that `T` may be any type that implements the current
-trait.  More generally, a type variable can be constrained by a named trait:
+trait.  More generally, a type variable in a regular procedure or function can
+be constrained by a named trait:
 
 ```
 def speak_twice(x:T<:speaker): string = "$(speak(x)) $(speak(x))"
@@ -1663,10 +1677,6 @@ Trait constraints can be combined.  Here `T` must implement both `speaker` and
 ```
 def describe_speaker(x:T<:{speaker, named}): string = describe(x)
 ```
-
-Using a trait name directly as a parameter type is a shorthand for a type
-variable constrained to that trait, so the first example could instead be
-written as `def say(x:speaker): string = speak(x)`.
 
 ### Implementing a trait
 
@@ -1687,11 +1697,10 @@ pub constructor dog(name:string)
 pub def speak(x:_): string = "$(x^name) says woof"
 ```
 
-Each abstract operation in `speaker` must have exactly one matching concrete
-procedure or function for `dog`.  Its parameter flows, argument and result
-types, determinism, purity, and resource use must match the abstract
-declaration.  The compiler reports an error if a required operation is missing
-or ambiguous.
+Each abstract procedure or function in `speaker` must have exactly one matching
+concrete procedure or function for `dog`.  Its parameter flows, argument and
+result types, determinism, purity, and resource use must match the abstract
+declaration.
 
 An implementation for another type may be declared in any module with:
 
@@ -1715,10 +1724,10 @@ the local matching procedure is preferred.
 
 ### Default trait implementations
 
-A trait may give an abstract operation a default implementation by declaring a
-concrete procedure or function in the trait module with the same signature.
-Types implementing the trait use that default unless their implementation
-module supplies its own matching operation:
+A trait may give an abstract procedure or function a default implementation by
+declaring a concrete procedure or function in the trait module with the same
+signature.  Types implementing the trait use that default unless their
+implementation module supplies its own matching operation:
 
 ```
 # greeter.wybe
