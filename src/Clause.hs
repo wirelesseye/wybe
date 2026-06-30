@@ -310,7 +310,6 @@ compileSimpleStmt' call@(ProcCall func _ _ args) = do
     logClause $ "Compiling call " ++ showStmt 4 call
     callSiteID <- gets nextCallSiteID
     modify (\st -> st {nextCallSiteID = callSiteID + 1})
-    args' <- concat <$> mapM (placedApply compileArg) args
     impurity <- gets clauseImpurity
     case func of
         First mod name procID -> do
@@ -324,12 +323,15 @@ compileSimpleStmt' call@(ProcCall func _ _ args) = do
             let typeVarMap = getTypeVarMap params args
             vTableArgs <- mapM (compileVTableArg typeVarMap) boundedTypeParams
             logClause $ "vTableArgs for " ++ name ++ ": " ++ show vTableArgs
+            flows <- paramFlow <$$> lift (getParams pSpec)
+            args' <- concat <$> zipWithM (placedApply . compileFlowArg) flows args 
             gFlows <- lift $ getProcGlobalFlows pSpec
             return $ PrimCall callSiteID pSpec impurity' (args' ++ vTableArgs) gFlows
         Higher fn -> do
             let impurity' = max impurity . modifierImpurity . higherTypeModifiers 
                           . trustFromJust ("untyped higher-order term " ++ show fn) . maybeExpType $ content fn
             fn' <- compileHigherFunc fn
+            args' <- concat <$> mapM (placedApply compileArg) args 
             return $ PrimHigher callSiteID fn' impurity' args'
 compileSimpleStmt' (ForeignCall "lpvm" "sizeof" flags [arg, out]) = do
     let ty = trustFromJust ("untyped in sizeof " ++ show arg)
@@ -396,14 +398,22 @@ compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
             let vspec = VTableSpec paramVarBound argType
             return $ ArgVTable (Left vspec) (Representation CPointer)
 
-
-compileArg :: Exp -> OptPos -> ClauseComp [PrimArg]
-compileArg (Typed exp typ coerce) pos = do
+compileFlowArg :: FlowDirection -> Exp -> OptPos -> ClauseComp [PrimArg]
+compileFlowArg flow (Typed exp typ coerce) pos = do
     logClause $ "Compiling expression " ++ show exp
     args <- compileArg' typ exp pos
-    logClause $ "Expression compiled to " ++ show args
-    return args
-compileArg exp pos = shouldnt $ "Compiling untyped argument " ++ show exp
+    args' <- 
+        if flowsOut flow && not (flowsOut $ flattenedExpFlow exp)
+        then do
+            out <- nextVar "_"
+            return $ args ++ [ArgVar out typ FlowOut Ordinary False]
+        else return args
+    logClause $ "Expression compiled to " ++ show args'
+    return args'
+compileFlowArg _ exp pos = shouldnt $ "Compiling untyped argument " ++ show exp
+
+compileArg :: Exp -> OptPos -> ClauseComp [PrimArg]
+compileArg exp = compileFlowArg (flattenedExpFlow exp) exp
 
 compileArg' :: TypeSpec -> Exp -> OptPos -> ClauseComp [PrimArg]
 compileArg' typ (IntValue int) _ = return [ArgInt int typ]

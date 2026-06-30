@@ -17,7 +17,7 @@
 --  This also includes the Compiler monad and the Module types.
 module AST (
   -- *Types just for parsing
-  Item(..), Visibility(..), isPublic,
+  Item(..), Visibility(..), ResourceDefn(..), isPublic,
   Determinism(..), determinismLEQ, determinismJoin, determinismMeet,
   disjunctionDeterminism, determinismFail, determinismSucceed,
   determinismSeq, determinismProceding, determinismName, determinismCanFail,
@@ -105,12 +105,13 @@ module AST (
   updateModInterface, updateAllProcs, updateModSubmods, updateModProcs,
   getModuleSpec, moduleIsType, option,
   getOrigin, getSource, getDirectory,
-  optionallyPutStr, message, errmsg, (<!>), prettyPos, Message(..), queueMessage,
+  optionallyPutStr, message, errmsg, warnmsg, (<!>), prettyPos,
+  Message(..), queueMessage,
   genProcName, addImport, doImport, importFromSupermodule, isAncestor, lookupType, lookupType',
   typeIsUnique, 
-  ResourceName, ResourceSpec(..), ResourceFlowSpec(..), ResourceImpln(..),
+  ResourceName, ResourceSpec(..), ResourceFlowSpec(..), PrimResourceImpln(..),
   initialisedResources, initialisedVisibleResources,
-  addSimpleResource, lookupResource,
+  addResource, lookupResourceSpec, lookupResource,
   specialResources, specialResourcesSet, isSpecialResource,
   publicResource, resourcefulName,
   ProcModifiers(..), defaultProcModifiers,
@@ -120,7 +121,7 @@ module AST (
   abstractProcs, outputVariableName, outputStatusName,
   envParamName, envPrimParam, makeGlobalResourceName,
   showBody, showPlacedPrims, showStmt, showBlock, showProcDef,
-  showProcIdentifier, showProcName,
+  showProcIdentifier, showProcName, showProcOrVarName,
   showModSpec, showModSpecs, showResources, showOptPos, showProcDefs, showUse,
   shouldnt, should, nyi, checkError, checkValue, trustFromJust, trustFromJustM,
   flowPrefix, showProcModifiers, showProcModifiers', showFlags, showFlags',
@@ -177,7 +178,7 @@ import           UnivSet as USet
 import           Data.Tuple.HT ( mapSnd, mapFst )
 import           Data.Word (Word8)
 import           Data.Char
-import           Text.Read (readMaybe)
+import           Data.Functor     ((<&>))
 import           Flow             ((|>))
 import           Numeric          (showHex)
 import           Options
@@ -185,16 +186,13 @@ import           System.Exit
 import           System.FilePath
 import           System.IO
 import           System.Directory (makeAbsolute, makeRelativeToCurrentDirectory)
--- import           Text.ParserCombinators.Parsec.Pos
 import           Text.Parsec.Pos
                  ( SourcePos, sourceName, sourceColumn, sourceLine )
 import           Util
 import           System.Console.ANSI
-
+import           Data.Binary (Binary)
 import           GHC.Generics (Generic)
-
-import Data.Binary (Binary)
-import Data.Functor ((<&>))
+import           GHC.Stack (HasCallStack)
 
 
 ----------------------------------------------------------------
@@ -213,7 +211,7 @@ data Item
      | ImportItems Visibility ModSpec [Ident] OptPos
      | ImportForeign [FilePath] OptPos
      | ImportForeignLib [Ident] OptPos
-     | ResourceDecl Visibility ResourceName TypeSpec (Maybe (Placed Exp)) OptPos
+     | ResourceDecl Visibility ResourceName ResourceDefn OptPos
      | FuncDecl Visibility ProcModifiers ProcProto TypeSpec (Placed Exp) OptPos
      | ProcDecl Visibility ProcModifiers ProcProto [Placed Stmt] OptPos
      | ForeignProcDecl Visibility Ident ProcModifiers (Maybe Ident) ProcProto TypeSpec OptPos
@@ -226,6 +224,13 @@ data Item
 -- |The visibility of a file item.  We only support public and private.
 data Visibility = Private | Public
                   deriving (Eq, Ord, Show, Generic)
+
+
+data ResourceDefn =
+    SimpleResourceDefn TypeSpec (Maybe (Placed Exp))
+    | CompoundResourceDefn [ResourceSpec]
+    deriving (Eq, Ord, Show, Generic)
+
 
 
 -- |Determinism describes whether a statement can succeed or fail if execution
@@ -624,11 +629,14 @@ updateLoadedModuleM updater modspec = do
 
 
 -- |Return the ModuleImplementation of the specified module.  An error
--- if the module is not loaded or does not have an implementation.
+-- if the module is not already loaded (or currently being loaded), or does not
+-- have an implementation.
 getLoadedModuleImpln :: ModSpec -> Compiler ModuleImplementation
 getLoadedModuleImpln modspec = do
-    mod <- trustFromJustM ("unknown module " ++ showModSpec modspec) $
-           getLoadingModule modspec
+    loadingMod <- getLoadingModule modspec
+    mod <- trustFromJust ("getLoadedModuleImpln " ++ showModSpec modspec)
+            . (`orElse` loadingMod) . find ((== modspec) . modSpec)
+            <$> gets underCompilation
     return $ trustFromJust ("unimplemented module " ++ showModSpec modspec) $
            modImplementation mod
 
@@ -1094,46 +1102,72 @@ typeIsUnique TypeSpec { typeMod = mod, typeName = name } = do
 typeIsUnique _ = return False
 
 
--- |Add the specified resource to the current module.
-addSimpleResource :: ResourceName -> ResourceImpln -> Visibility -> Compiler ()
-addSimpleResource name impln@(SimpleResource ty _ pos) vis = do
+-- |Add the specified resource and its definition to the current module.
+-- We first check if the named resource is already defined, and report an error
+-- if so.  Otherwise, providing the type is not generic, we record the
+-- definition to process once types have been checked.
+addResource :: ResourceName -> Visibility -> ResourceDefn -> OptPos
+            -> Compiler ()
+addResource name vis def pos = do
     currMod <- getModuleSpec
     let rspec = ResourceSpec currMod name
-    let rdef = Map.singleton rspec impln
     modRess <- getModuleImplementationField modResources
     if name `Map.member` modRess
     then errmsg pos $ "Duplicate declaration of resource '" ++ name ++ "'"
-    else if genericType ty
-    then errmsg pos $ "Resource type cannot contain type variables: " ++ show ty
-    else do
-        updateImplementation
-            (\imp -> imp { modResources = Map.insert name rdef $ modResources imp,
-                           modKnownResources = setMapInsert name rspec
-                                             $ modKnownResources imp })
-        updateInterface vis $ updatePubResources $ Map.insert name rspec
+    else case def of
+        SimpleResourceDefn ty init -> do
+            if genericType ty
+            then errmsg pos $ "Resource type cannot contain type variables: "
+                                ++ show ty
+            else do
+                let impln = PrimResource ty init pos
+                let rdef = Map.singleton rspec impln
+                updateImplementation
+                    (\imp -> imp { modResources = Map.insert name rdef
+                                                    $ modResources imp,
+                                modKnownResources = setMapInsert name rspec
+                                                    $ modKnownResources imp })
+                updateInterface vis $ updatePubResources $ Map.insert name rspec
+        CompoundResourceDefn ress -> do
+            let resSet = Set.fromList ress
+            updateImplementation
+                (\imp -> imp { modCompoundResources =
+                                    Map.insert name (resSet, pos)
+                                    $ modCompoundResources imp,
+                            modKnownResources = setMapInsert name rspec
+                                                $ modKnownResources imp })
+            updateInterface vis $ updatePubResources $ Map.insert name rspec
+
+
+-- |Fully qualify the given resource spec, if the resource has been defined.
+lookupResourceSpec :: ResourceSpec -> Compiler (Maybe ResourceSpec)
+lookupResourceSpec res@(ResourceSpec mod name) = do
+    logAST $ "qualifying resource spec " ++ show res
+    rspecs <- refersTo mod name modKnownResources resourceMod
+    logAST $ "Candidates: " ++ show rspecs
+    case Set.size rspecs of
+        0 | List.null mod && Map.member name specialResources -> return $ Just res
+        0 -> return Nothing
+        1 -> return $ Just $ Set.findMin rspecs
+        _ -> return Nothing
 
 
 -- |Find the definition of the specified resource visible in the current module.
 lookupResource :: ResourceSpec -> Compiler (Maybe ResourceDef)
-lookupResource res@(ResourceSpec mod name) = do
-    logAST $ "Looking up resource " ++ show res
-    rspecs <- refersTo mod name modKnownResources resourceMod
-    logAST $ "Candidates: " ++ show rspecs
-    case (Set.size rspecs, Map.lookup name specialResources) of
-        (0, Just (_,ty)) | List.null mod ->
-            return $ Just $ Map.singleton res
-                   $ SimpleResource ty Nothing Nothing
-        (0, _) -> return Nothing
-        (1,_) -> do
-            let rspec = Set.findMin rspecs
-            maybeMod <- getLoadingModule $ resourceMod rspec
+lookupResource res =
+    lookupResourceSpec res >>= \case
+        Nothing -> return Nothing
+        Just res'@(ResourceSpec [] name) -> do
+            let rdef t = Map.singleton res' (PrimResource t Nothing Nothing)
+            return $ rdef . snd <$> Map.lookup name specialResources
+        Just (ResourceSpec mod name) -> do
+            maybeMod <- getLoadingModule mod
             let maybeDef = maybeMod >>= modImplementation >>=
-                        Map.lookup (resourceName rspec) . modResources
+                        Map.lookup name . modResources
             logAST $ "Found resource:  " ++ show maybeDef
             let rdef = trustFromJust "lookupResource" maybeDef
             logAST $ "  with definition:  " ++ show rdef
             return $ Just rdef
-        _   -> return Nothing
 
 
 -- |All the "special" resources, which Wybe automatically generates where they
@@ -1612,7 +1646,7 @@ lookupConstInfo (StructID mspec n _) = do
 -- The resulting Exp does not use a StringValue constructor.
 cStringExpr :: String -> Compiler Exp
 cStringExpr str = do
-    structID <- recordConstStruct (CStringInfo str) 
+    structID <- recordConstStruct (CStringInfo str)
                         (Just $ StringValue str CString)
     return $ Typed (ConstStruct structID) cStringType Nothing
 
@@ -1802,6 +1836,8 @@ data ModuleImplementation = ModuleImplementation {
                                               -- ^reversed list of data
                                               -- constructors for this
                                               -- type, if it is a type
+    modCompoundResources :: Map Ident (Set ResourceSpec,OptPos),
+                                              -- ^Defined compound resources 
     modKnownTypes:: Map Ident (Set ModSpec),  -- ^Types visible to this module
     modKnownResources :: Map Ident (Set ResourceSpec),
                                               -- ^Resources visible to this mod
@@ -1820,7 +1856,7 @@ emptyImplementation :: ModuleImplementation
 emptyImplementation =
     ModuleImplementation Set.empty Map.empty Nothing Map.empty Map.empty
                          Map.empty Nothing Map.empty Map.empty Map.empty
-                         Map.empty Map.empty Set.empty Set.empty -- Nothing
+                         Map.empty Map.empty Map.empty Set.empty Set.empty -- Nothing
 
 
 -- These functions hack around Haskell's terrible setter syntax
@@ -2137,17 +2173,20 @@ resourceDefToIFace = Map.map resourceType
 
 -- |A resource definition.  Since a resource may be defined as a
 --  collection of other resources, this is a set of resources (for
---  simple resources, this will be a singleton), each with type and
---  possibly an initial value.  There's also an optional source
--- position.
-type ResourceDef = Map ResourceSpec ResourceImpln
+--  simple resources, this will be a singleton), each with type,
+--  possibly an initial value, and an optional source position.
+type ResourceDef = Map ResourceSpec PrimResourceImpln
 
-data ResourceImpln =
-    SimpleResource {
+
+-- | A single primitive (simple) resource implementation.  A compound resource
+-- may be implemented in terms of multiple simple resources.
+data PrimResourceImpln =
+    PrimResource {
         resourceType::TypeSpec,
         resourceInit::Maybe (Placed Exp),
         resourcePos::OptPos
-        } deriving (Generic, Eq)
+        }
+    deriving (Generic, Eq)
 
 
 -- | Return the initialised resources *defined* by the current module.
@@ -2407,7 +2446,7 @@ data GlobalFlows
         globalFlowsOut :: UnivSet GlobalInfo,
         -- ^ The set of globals that flow out
         globalFlowsParams :: UnivSet ParameterID
-        -- ^ The set of parameters (by ID) that effect the global flwos
+        -- ^ The set of parameters (by ID) that effect the global flows
     }
     deriving (Eq, Ord, Generic)
 
@@ -2703,7 +2742,7 @@ data PrimFork =
       forkVar::PrimVarName,       -- ^The variable that selects branch to take
       forkVarType::TypeSpec,      -- ^The Wybe type of the forkVar
       forkVarLast::Bool,          -- ^Is this the last occurrence of forkVar
-      forkBodies::[(Integer,ProcBody)],   
+      forkBodies::[(Integer,ProcBody)],
                                   -- ^one branch for each value of forkVar
       forkDefault::Maybe ProcBody -- ^branch to take if forkVar is out of range
     } |
@@ -2742,10 +2781,10 @@ prependToBody before (ProcBody prims fork)
 unMergeFork :: PrimFork -> Compiler PrimFork
 unMergeFork (MergedFork var ty final table body dlft) = do
     table' <- mapM (\(var, ty, id, _) -> (var, ty,) . List.map (`constValuePrimArg` ty) . arrayData . trustFromJust "unMergeFork" <$> lookupConstInfo id) table
-    let untabled = List.transpose 
-                    $ List.map (\(var', ty', vals) -> List.map (\p -> Unplaced $ PrimForeign "llvm" "move" [] [p, ArgVar var' ty' FlowOut Ordinary False]) vals) 
+    let untabled = List.transpose
+                    $ List.map (\(var', ty', vals) -> List.map (\p -> Unplaced $ PrimForeign "llvm" "move" [] [p, ArgVar var' ty' FlowOut Ordinary False]) vals)
                     table'
-    return $ if List.null untabled 
+    return $ if List.null untabled
     then NoFork
     else PrimFork var ty final (zip [0..] (List.map (`prependToBody` body) untabled)) dlft
 unMergeFork fork = shouldnt $ "unMergeFork on non-merged " ++ show fork
@@ -2754,7 +2793,7 @@ unMergeFork fork = shouldnt $ "unMergeFork on non-merged " ++ show fork
 -- with the given var used int the fork
 guardedMergedFork :: PrimVarName -> PrimVarName -> TypeSpec -> Integer -> ProcBody -> Maybe ProcBody -> ProcBody
 guardedMergedFork _   _   _  _     body Nothing     = body
-guardedMergedFork tmp var ty limit body (Just dflt) = 
+guardedMergedFork tmp var ty limit body (Just dflt) =
     ProcBody
         [Unplaced $ PrimForeign "llvm" "icmp_ule" []
           [ArgVar var ty FlowIn Ordinary False, ArgInt limit ty, ArgVar tmp bit FlowOut Ordinary False]]
@@ -2953,8 +2992,8 @@ foldBodyDistrib primFn emptyConj abDisj abConj (ProcBody pprims fork) =
         foldAll (foldBodyDistrib primFn common abDisj abConj $ snd body) $ List.map snd bodies ++ maybeToList deflt
       MergedFork{forkBody=body, forkDefault=deflt} ->
         foldAll (foldBodyDistrib primFn common abDisj abConj body) $ maybeToList deflt
-            
-            
+
+
 
 
 -- |Traverse a ProcBody applying a monadic primFn to every Prim and applying a
@@ -3503,6 +3542,7 @@ flattenedExpFlow (Var _ flow _)        = flow
 flattenedExpFlow (AnonParamVar _ flow) = flow
 flattenedExpFlow FailExpr              = ParamIn
 flattenedExpFlow (Typed exp _ _)       = flattenedExpFlow exp
+flattenedExpFlow (Global _)            = ParamIn
 flattenedExpFlow otherExp =
     shouldnt $ "Getting flow direction of unflattened exp " ++ show otherExp
 
@@ -3802,7 +3842,7 @@ constValueAtOffset (VTableInfo _ fields _ _ _) offset = go fields offset
           go [] _ = Nothing
 constValueAtOffset (CStringInfo chars) offset =
     (`IntStructMember` 1) . toInteger . ord <$> (chars !? offset)
-constValueAtOffset (ArrayInfo []) _ = Nothing 
+constValueAtOffset (ArrayInfo []) _ = Nothing
 constValueAtOffset (ArrayInfo elts@(elt:_)) offset =
     let eltSize = constValueSize elt
         (idx, eltOffset) = divMod offset eltSize
@@ -4212,7 +4252,7 @@ setExpTypeFlow typeflow (Typed expr _ castInner)
     where Typed expr' ty' _ = setExpTypeFlow typeflow expr
 setExpTypeFlow (TypeFlow ty fl) (Var name _ ftype)
     = Typed (Var name fl ftype) ty Nothing
-setExpTypeFlow (TypeFlow ty ParamIn) expr
+setExpTypeFlow (TypeFlow ty flow) expr | flow /= ParamOut
     = Typed expr ty Nothing
 setExpTypeFlow (TypeFlow ty fl) expr
     = shouldnt $ "Cannot set type/flow of " ++ show expr
@@ -4376,9 +4416,13 @@ instance Show Item where
     ++ showOptPos pos ++ "\n  "
     ++ intercalate "\n  " (List.map show items)
     ++ "\n}\n"
-  show (ResourceDecl vis name typ init pos) =
-    visibilityPrefix vis ++ "resource " ++ name ++ ":" ++ show typ
-    ++ maybeShow " = " init " "
+  show (ResourceDecl vis name resdef pos) =
+    visibilityPrefix vis ++ "resource " ++ name ++
+        case resdef of
+          SimpleResourceDefn typ init ->
+            ":" ++ show typ ++ maybeShow " = " init " "
+          CompoundResourceDefn rspecs ->
+            " = " ++ intercalate ", " (List.map show rspecs)
     ++ showOptPos pos
   show (FuncDecl vis modifiers proto typ exp pos) =
     visibilityPrefix vis
@@ -4395,7 +4439,7 @@ instance Show Item where
     ++ showOptPos pos
     ++ " {"
     ++ showBody 4 stmts
-    ++ "\n  }"  
+    ++ "\n  }"
   show (ForeignProcDecl vis lang modifiers mbAlias proto retType pos) =
     visibilityPrefix vis
     ++ "def foreign "
@@ -4528,9 +4572,9 @@ instance Show TypeDef where
     ++ showOptPos pos
 
 
--- |How to show a resource definition.
-instance Show ResourceImpln where
-  show (SimpleResource typ init pos) =
+-- |How to show a primitive resource definition.
+instance Show PrimResourceImpln where
+  show (PrimResource typ init pos) =
     show typ ++ maybeShow " = " init "" ++ showOptPos pos
 
 
@@ -4571,6 +4615,10 @@ showProcIdentifier kind name = kind ++ " " ++ name
 showProcName :: ProcName -> String
 showProcName = showProcIdentifier "proc"
 
+
+-- | A printable version of a proc name; handles special empty proc name.
+showProcOrVarName :: ProcName -> String
+showProcOrVarName name = "`" ++ name ++ "`"
 
 -- |How to show a type specification.
 instance Show TypeSpec where
@@ -4666,9 +4714,9 @@ showFork ind (PrimFork var ty last bodies deflt) =
 showFork ind (MergedFork var ty last table body deflt) =
     startLine ind ++ "factored " ++ (if last then "~" else "") ++ show var ++
                   ":" ++ show ty ++ " of" ++
-    List.concatMap (\(var, ty, struct, vals) -> 
+    List.concatMap (\(var, ty, struct, vals) ->
                         startLine (ind + 2) ++ "?" ++ show var ++ ":" ++ show ty ++
-                        " <- " ++ show struct ++ "" ++ show vals ++ "") 
+                        " <- " ++ show struct ++ "" ++ show vals ++ "")
         table
     ++ showBlock (ind+4) body
     ++ maybe "" (\b -> startLine ind ++ "else:"
@@ -4905,39 +4953,39 @@ maybeShowStr pre (Just something) post =
 ------------------------------ Error Reporting -----------------------
 
 -- |Report an internal error and abort.
-shouldnt :: String -> a
+shouldnt :: HasCallStack => String -> a
 shouldnt what = error $ "Internal error: " ++ what
 
 
 -- |Report an internal error and abort unless the test succeeds.
-should :: String -> Bool -> ()
+should :: HasCallStack => String -> Bool -> ()
 should _    True  = ()
 should what False = shouldnt what
 
 
 -- |Report that some feature is not yet implemented and abort.
-nyi :: String -> a
+nyi :: HasCallStack => String -> a
 nyi what = error $ "Not yet implemented: " ++ what
 
 
 -- |Check that all is well, else abort.
-checkError :: Monad m => String -> Bool -> m ()
+checkError :: HasCallStack => Monad m => String -> Bool -> m ()
 checkError msg bad = when bad $ shouldnt msg
 
 
 -- |Check that a value is OK; if so, return it, else abort.
-checkValue :: (t -> Bool) -> String -> t -> t
+checkValue :: HasCallStack => (t -> Bool) -> String -> t -> t
 checkValue tst msg val = if tst val then val else shouldnt msg
 
 
 -- |Like fromJust, but with its own error message.
-trustFromJust :: String -> Maybe t -> t
+trustFromJust :: HasCallStack => String -> Maybe t -> t
 trustFromJust msg Nothing = shouldnt $ "trustFromJust in " ++ msg
 trustFromJust _ (Just val) = val
 
 
 -- |Monadic version of trustFromJust.
-trustFromJustM :: Monad m => String -> m (Maybe t) -> m t
+trustFromJustM :: HasCallStack => Monad m => String -> m (Maybe t) -> m t
 trustFromJustM msg computation = do
     trustFromJust msg <$> computation
 
@@ -4971,6 +5019,12 @@ queueMessage msg = do
 --  specified source location to the collected compiler output messages.
 errmsg :: OptPos -> String -> Compiler ()
 errmsg = flip (message Error)
+
+
+-- |Add the specified string as a warning message referring to the optionally
+--  specified source location to the collected compiler output messages.
+warnmsg :: OptPos -> String -> Compiler ()
+warnmsg = flip (message Warning)
 
 
 -- |Pretty helper operator for adding messages to the compiler state.
