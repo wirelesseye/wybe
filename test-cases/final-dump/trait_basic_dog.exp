@@ -84,7 +84,7 @@ source_filename = "!ROOT!/final-dump/trait_basic_dog.wybe"
 target triple   = ????
 
 @"trait_basic_dog#constant#0" = private unnamed_addr constant [ ?? x i8 ] c" says woof\00", align 8
-@"#vtable#trait_basic_dog#trait_basic_speaker#trait_basic_dog" = unnamed_addr constant {ptr} { ptr @"trait_basic_dog#.speak<0>" }, align 8
+@"#vtable##trait_basic_speaker##trait_basic_dog##trait_basic_dog#" = unnamed_addr constant {ptr} { ptr @"trait_basic_dog#.speak<0>" }, align 8
 @"trait_basic_dog#constant#2" = private unnamed_addr constant {i64, ptr} { i64 10, ptr @"trait_basic_dog#constant#0" }, align 8
 
 declare external fastcc i64 @"wybe#.string#.,,<0>"(i64, i64)

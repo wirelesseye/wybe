@@ -1186,7 +1186,7 @@ declareStructConstant name (StructInfo sz members) section = do
 declareStructConstant _ (VTableInfo sz members external spec mod) section = do
     let llvmType = llvmStructType $ llvmConstValueRep <$> members
     llvmFields <- llvmConstStruct members
-    name <- lift $ llvmVTableName spec mod
+    let name = llvmVTableName spec mod
     llvmPutStrLn $ llvmGlobalName name ++ " = "
                     ++ (if external then "external " else "")
                     ++ "unnamed_addr constant "
@@ -1664,7 +1664,7 @@ llvmValue (ArgVTable info _) = case info of
         let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup vspec knownTraitImpls
         thisMod <- lift getModuleSpec
         let mod = fromMaybe thisMod opmod
-        llvmGlobalName <$> lift (llvmVTableName vspec mod)
+        return $ llvmGlobalName $ llvmVTableName vspec mod
     Right val -> llvmValue val
 llvmValue (ArgConstRef structID ty) = do
     rep <- typeRep ty
@@ -2343,10 +2343,30 @@ llvmProcName pspec =
     (llvmGlobalName $ mangleProcSpec pspec, "fastcc")
 
 
+-- | Mangle a mod spec
+mangleModSpec :: ModSpec -> ModSpec
+mangleModSpec mod = (++ [specialChar]) <$> mod
+
+
 -- | Mangle a proc spec
 mangleProcSpec :: ProcSpec -> String
 mangleProcSpec pspec@ProcSpec{procSpecMod=mod} =
-    show pspec{procSpecMod=(++ [specialChar]) <$> mod}
+    show pspec{procSpecMod=mangleModSpec mod}
+
+
+-- | Mangle a type spec
+mangleTypeSpec :: TypeSpec -> TypeSpec
+mangleTypeSpec typ@TypeSpec{typeMod=tyMod, typeParams=tyParams} = do
+    let tyMod' = mangleModSpec tyMod
+    let tyParams' = List.map mangleTypeSpec tyParams
+    typ{typeMod=tyMod', typeParams=tyParams'}
+mangleTypeSpec typ@HigherOrderType{higherTypeParams=flows} = do
+    let flows' = List.map mangleTypeFlow flows
+    typ{higherTypeParams=flows'}
+  where
+    mangleTypeFlow fl@TypeFlow{typeFlowType=flType} =
+        fl{typeFlowType=mangleTypeSpec flType}
+mangleTypeSpec typ = typ
 
 
 -- | Make a suitable LLVM name for a global variable or constant.  We prefix it
@@ -2391,15 +2411,15 @@ llvmLabelName varName = "label %" ++ llvmQuoteIfNecessary varName
 
 
 -- | Make a suitable LLVM name for a vtable.
-llvmVTableName :: VTableSpec -> ModSpec -> Compiler String
+llvmVTableName :: VTableSpec -> ModSpec -> String
 llvmVTableName (VTableSpec trait typ) mod = do
-    let typMod = trustFromJust "llvmVTableName" $ typeModule typ
-        traitMod = trustFromJust "llvmVTableName" $ typeModule trait
-    return $
-        vtableNamePrefix
-        ++ specialName (showModSpec typMod)
-        ++ specialName (showModSpec traitMod)
-        ++ specialName (showModSpec mod)
+    let trait' = mangleTypeSpec trait
+    let typ' = mangleTypeSpec typ
+    let mod' = mangleModSpec mod
+    vtableNamePrefix
+        ++ specialSeparator ++ show trait'
+        ++ specialSeparator ++ show typ'
+        ++ specialSeparator ++ showModSpec mod'
 
 
 -- | Format a string as an LLVM string; the Bool indicates whether to add

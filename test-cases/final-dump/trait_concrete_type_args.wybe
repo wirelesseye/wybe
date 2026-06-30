@@ -5,7 +5,10 @@ type printable trait {
 type box(T) { pub box(value:T) }
 
 impl box(int) <: printable
+impl box(float) <: printable
 
 def render(x:box(int)): string = "boxed int"
+def render(x:box(float)): string = "boxed float"
 
-!println(render(box(1)))
+!println(printable.render(box(1)))
+!println(printable.render(box(3.14)))

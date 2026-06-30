@@ -54,7 +54,7 @@ target triple   = ????
 
 @"trait_implicit_equality#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"different\00", align 8
 @"trait_implicit_equality#constant#1" = private unnamed_addr constant [ ?? x i8 ] c"same\00", align 8
-@"#vtable#trait_implicit_equality_number#trait_implicit_equality_equality#trait_implicit_equality_number" = external unnamed_addr constant {ptr}, align 8
+@"#vtable##trait_implicit_equality_equality##trait_implicit_equality_number##trait_implicit_equality_number#" = external unnamed_addr constant {ptr}, align 8
 @"trait_implicit_equality#constant#3" = private unnamed_addr constant {i64, ptr} { i64 4, ptr @"trait_implicit_equality#constant#1" }, align 8
 @"trait_implicit_equality#constant#4" = private unnamed_addr constant {i64, ptr} { i64 9, ptr @"trait_implicit_equality#constant#0" }, align 8
 
@@ -182,7 +182,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_implicit_equality_number.wybe"
 target triple   = ????
 
-@"#vtable#trait_implicit_equality_number#trait_implicit_equality_equality#trait_implicit_equality_number" = unnamed_addr constant {ptr} { ptr @"trait_implicit_equality_number#.=<0>" }, align 8
+@"#vtable##trait_implicit_equality_equality##trait_implicit_equality_number##trait_implicit_equality_number#" = unnamed_addr constant {ptr} { ptr @"trait_implicit_equality_number#.=<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 

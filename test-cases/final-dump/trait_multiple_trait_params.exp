@@ -81,8 +81,8 @@ source_filename = "!ROOT!/final-dump/trait_multiple_trait_params.wybe"
 target triple   = ????
 
 @"trait_multiple_trait_params#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"John\00", align 8
-@"#vtable#trait_multiple_trait_params.school#trait_multiple_trait_params.group#trait_multiple_trait_params" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.add_person<0>" }, align 8
-@"#vtable#trait_multiple_trait_params.student#trait_multiple_trait_params.person#trait_multiple_trait_params" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.person_name<0>" }, align 8
+@"#vtable##trait_multiple_trait_params#.group##trait_multiple_trait_params#.school##trait_multiple_trait_params#" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.add_person<0>" }, align 8
+@"#vtable##trait_multiple_trait_params#.person##trait_multiple_trait_params#.student##trait_multiple_trait_params#" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.person_name<0>" }, align 8
 @"trait_multiple_trait_params#constant#3" = private unnamed_addr constant {i64, ptr} { i64 4, ptr @"trait_multiple_trait_params#constant#0" }, align 8
 
 declare external fastcc void @"wybe#.string#.print<0>"(i64)
@@ -92,7 +92,7 @@ declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_multiple_trait_params#.<0>"() {
   %"tmp#14##0" = ptrtoint ptr @"trait_multiple_trait_params#constant#3" to i64
-  %"school1##1" = tail call fastcc i64 @"trait_multiple_trait_params#.group#.add_person<0>"(i64 0, i64 %"tmp#14##0", ptr @"#vtable#trait_multiple_trait_params.school#trait_multiple_trait_params.group#trait_multiple_trait_params", ptr @"#vtable#trait_multiple_trait_params.student#trait_multiple_trait_params.person#trait_multiple_trait_params")
+  %"school1##1" = tail call fastcc i64 @"trait_multiple_trait_params#.group#.add_person<0>"(i64 0, i64 %"tmp#14##0", ptr @"#vtable##trait_multiple_trait_params#.group##trait_multiple_trait_params#.school##trait_multiple_trait_params#", ptr @"#vtable##trait_multiple_trait_params#.person##trait_multiple_trait_params#.student##trait_multiple_trait_params#")
   tail call fastcc void @"trait_multiple_trait_params#.#cont#1<0>"(i64 %"school1##1")
   ret void
 }

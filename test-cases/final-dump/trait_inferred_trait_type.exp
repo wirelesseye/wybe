@@ -74,8 +74,8 @@ my_method#adapter(x##0:Type0<:trait_inferred_trait_type.my_trait, ?#result##0:Ty
 source_filename = "!ROOT!/final-dump/trait_inferred_trait_type.wybe"
 target triple   = ????
 
-@"#vtable#wybe.float#trait_inferred_trait_type.my_trait#trait_inferred_trait_type" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<0>" }, align 8
-@"#vtable#wybe.int#trait_inferred_trait_type.my_trait#trait_inferred_trait_type" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<1>" }, align 8
+@"#vtable##trait_inferred_trait_type#.my_trait##wybe#.float##trait_inferred_trait_type#" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<0>" }, align 8
+@"#vtable##trait_inferred_trait_type#.my_trait##wybe#.int##trait_inferred_trait_type#" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<1>" }, align 8
 
 declare external ccc void @print_float(double)
 declare external ccc void @print_int(i64)
@@ -83,10 +83,10 @@ declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_inferred_trait_type#.<0>"() {
-  %"tmp#0##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 1, ptr @"#vtable#wybe.int#trait_inferred_trait_type.my_trait#trait_inferred_trait_type")
+  %"tmp#0##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 1, ptr @"#vtable##trait_inferred_trait_type#.my_trait##wybe#.int##trait_inferred_trait_type#")
   call ccc void @print_int(i64 %"tmp#0##0")
   call ccc void @putchar(i8 10)
-  %"tmp#14##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 bitcast( double 3.14 to i64 ), ptr @"#vtable#wybe.float#trait_inferred_trait_type.my_trait#trait_inferred_trait_type")
+  %"tmp#14##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 bitcast( double 3.14 to i64 ), ptr @"#vtable##trait_inferred_trait_type#.my_trait##wybe#.float##trait_inferred_trait_type#")
   %"tmp#1##0" = bitcast i64 %"tmp#14##0" to double
   call ccc void @print_float(double %"tmp#1##0")
   call ccc void @putchar(i8 10)

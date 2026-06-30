@@ -107,7 +107,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_implicit_equality_number.wybe"
 target triple   = ????
 
-@"#vtable#trait_implicit_equality_number#trait_implicit_equality_equality#trait_implicit_equality_number" = unnamed_addr constant {ptr} { ptr @"trait_implicit_equality_number#.=<0>" }, align 8
+@"#vtable##trait_implicit_equality_equality##trait_implicit_equality_number##trait_implicit_equality_number#" = unnamed_addr constant {ptr} { ptr @"trait_implicit_equality_number#.=<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 

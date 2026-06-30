@@ -61,7 +61,7 @@ target triple   = ????
 
 @"trait_higher_order#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"box: \00", align 8
 @"trait_higher_order#constant#1" = private unnamed_addr constant [ ?? x i8 ] c"Ada\00", align 8
-@"#vtable#trait_higher_order_box#trait_higher_order_mapper#trait_higher_order_box" = external unnamed_addr constant {ptr}, align 8
+@"#vtable##trait_higher_order_mapper##trait_higher_order_box##trait_higher_order_box#" = external unnamed_addr constant {ptr}, align 8
 @"trait_higher_order#constant#3" = private unnamed_addr constant {i64, ptr} { i64 5, ptr @"trait_higher_order#constant#0" }, align 8
 @"trait_higher_order#constant#4" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_higher_order#constant#1" }, align 8
 @"trait_higher_order#constant#5" = private unnamed_addr constant {ptr} { ptr @"trait_higher_order#.#closure#1<0>" }, align 8
@@ -169,7 +169,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_higher_order_box.wybe"
 target triple   = ????
 
-@"#vtable#trait_higher_order_box#trait_higher_order_mapper#trait_higher_order_box" = unnamed_addr constant {ptr} { ptr @"trait_higher_order_box#.apply_to_self<0>" }, align 8
+@"#vtable##trait_higher_order_mapper##trait_higher_order_box##trait_higher_order_box#" = unnamed_addr constant {ptr} { ptr @"trait_higher_order_box#.apply_to_self<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 

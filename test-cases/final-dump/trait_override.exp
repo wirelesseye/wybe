@@ -51,7 +51,7 @@ source_filename = "!ROOT!/final-dump/trait_override.wybe"
 target triple   = ????
 
 @"trait_override#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"Ada\00", align 8
-@"#vtable#trait_override_person#trait_override_named#trait_override_person" = external unnamed_addr constant {ptr}, align 8
+@"#vtable##trait_override_named##trait_override_person##trait_override_person#" = external unnamed_addr constant {ptr}, align 8
 @"trait_override#constant#2" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_override#constant#0" }, align 8
 
 declare external fastcc i64 @"trait_override_person#.describe<0>"(i64)
@@ -64,7 +64,7 @@ define external fastcc void @"trait_override#.<0>"() {
   %"tmp#0##0" = ptrtoint ptr @"trait_override#constant#2" to i64
   tail call fastcc void @"wybe#.string#.print<0>"(i64 ptrtoint( ptr @"trait_override#constant#2" to i64 ))
   call ccc void @putchar(i8 10)
-  %"tmp#18##0" = getelementptr inbounds ptr, ptr @"#vtable#trait_override_person#trait_override_named#trait_override_person", i64 0
+  %"tmp#18##0" = getelementptr inbounds ptr, ptr @"#vtable##trait_override_named##trait_override_person##trait_override_person#", i64 0
   %"tmp#19##0" = load ptr, ptr %"tmp#18##0"
   %"tmp#2##0" = tail call fastcc i64 %"tmp#19##0"(i64 %"tmp#0##0")
   tail call fastcc void @"wybe#.string#.print<0>[410bae77d3]"(i64 %"tmp#2##0")
@@ -208,7 +208,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_override_person.wybe"
 target triple   = ????
 
-@"#vtable#trait_override_person#trait_override_named#trait_override_person" = unnamed_addr constant {ptr} { ptr @"trait_override_person#.describe<0>" }, align 8
+@"#vtable##trait_override_named##trait_override_person##trait_override_person#" = unnamed_addr constant {ptr} { ptr @"trait_override_person#.describe<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
