@@ -1465,6 +1465,7 @@ procToPartial callFlows hasBang info@FirstInfo{fiPartial=False,
                                                fiDetism=detism,
                                                fiImpurity=impurity}
     | not hasBang && not (List.null callFlows) && last callFlows == ParamOut
+                  && any (/= ParamOut) higherFls
                   && (length callFlows <= length tys
                      || length callFlows <= length tys + 1 && usesResources)
         = (Just info{fiPartial=True,
