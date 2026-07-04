@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_specificity.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_specificity_scalar.render<0>], vtableExternal = True, vtableSpec = VTableSpec {vtableTrait = trait_specificity_printable, vtableImplType = trait_specificity_scalar}, vtableMod = ["trait_specificity_scalar"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_specificity_scalar.render#adapter<0>], vtableExternal = True, vtableSpec = VTableSpec {vtableTrait = trait_specificity_printable, vtableImplType = trait_specificity_scalar}, vtableMod = ["trait_specificity_scalar"]}
   imports         : use trait_specificity_printable
                     use trait_specificity_scalar
                     use wybe
@@ -37,6 +37,7 @@ target triple   = ????
 
 @"#vtable##trait_specificity_printable##trait_specificity_scalar##trait_specificity_scalar#" = external unnamed_addr constant {ptr}, align 8
 
+declare external fastcc i64 @"trait_specificity_scalar#.render#adapter<0>"(i64)
 declare external fastcc i64 @"trait_specificity_scalar#.render<0>"(i64)
 declare external fastcc void @"wybe#.string#.print<0>[410bae77d3]"(i64)
 declare external ccc void @putchar(i8)
@@ -98,7 +99,7 @@ define external fastcc i64 @"trait_specificity_printable#.render<0>"(i64 %"x##0"
                     trait_specificity_scalar.value<1>
                     trait_specificity_scalar.~=<0>
   constants       : 0:: CStringInfo {cstringChars = "scalar "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_specificity_scalar.render<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_specificity_printable, vtableImplType = trait_specificity_scalar}, vtableMod = ["trait_specificity_scalar"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_specificity_scalar.render#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_specificity_printable, vtableImplType = trait_specificity_scalar}, vtableMod = ["trait_specificity_scalar"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 7 8,PointerStructMember c"scalar "]}
   imports         : use trait_specificity_printable
                     use wybe
@@ -113,7 +114,7 @@ proc = > public {inline} (1 calls)
     foreign llvm icmp_eq(~#left##0:trait_specificity_scalar, ~#right##0:trait_specificity_scalar, ?#success##0:wybe.bool)
 
 
-proc render > public (0 calls)
+proc render > public (1 calls)
 0: trait_specificity_scalar.render<0>
 render(x##0:trait_specificity_scalar, ?#result##0:wybe.string)<{}; {}; {}>:
   AliasPairs: []
@@ -121,6 +122,15 @@ render(x##0:trait_specificity_scalar, ?#result##0:wybe.string)<{}; {}; {}>:
     foreign lpvm cast(~x##0:trait_specificity_scalar, ?tmp#2##0:wybe.int) @trait_specificity_scalar:nn:nn
     wybe.int.fmt<2>(~tmp#2##0:wybe.int, 0:wybe.int, 32:wybe.char, ?tmp#1##0:wybe.string) #4 @trait_specificity_scalar:nn:nn
     wybe.string.,,<0>("scalar ":wybe.string, ~tmp#1##0:wybe.string, ?#result##0:wybe.string) #3 @trait_specificity_scalar:nn:nn
+
+
+proc render#adapter > {noinline} (0 calls)
+0: trait_specificity_scalar.render#adapter<0>
+render#adapter(x##0:Type0<:trait_specificity_printable, ?#result##0:wybe.string)<{}; {}; {}>:
+  AliasPairs: []
+  InterestingCallProperties: []
+    foreign lpvm cast(~x##0:Type0<:trait_specificity_printable, ?x#adapter0##0:trait_specificity_scalar)
+    trait_specificity_scalar.render<0>(~x#adapter0##0:trait_specificity_scalar, ?#result##0:wybe.string) #0
 
 
 proc trait_specificity_scalar > public {inline} (0 calls)
@@ -168,7 +178,7 @@ source_filename = "!ROOT!/final-dump/trait_specificity_scalar.wybe"
 target triple   = ????
 
 @"trait_specificity_scalar#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"scalar \00", align 8
-@"#vtable##trait_specificity_printable##trait_specificity_scalar##trait_specificity_scalar#" = unnamed_addr constant {ptr} { ptr @"trait_specificity_scalar#.render<0>" }, align 8
+@"#vtable##trait_specificity_printable##trait_specificity_scalar##trait_specificity_scalar#" = unnamed_addr constant {ptr} { ptr @"trait_specificity_scalar#.render#adapter<0>" }, align 8
 @"trait_specificity_scalar#constant#2" = private unnamed_addr constant {i64, ptr} { i64 7, ptr @"trait_specificity_scalar#constant#0" }, align 8
 
 declare external fastcc i64 @"wybe#.int#.fmt<2>"(i64, i64, i8)
@@ -184,6 +194,11 @@ define external fastcc i64 @"trait_specificity_scalar#.render<0>"(i64 %"x##0") {
   %"tmp#1##0" = tail call fastcc i64 @"wybe#.int#.fmt<2>"(i64 %"x##0", i64 0, i8 32)
   %"tmp#10##0" = tail call fastcc i64 @"wybe#.string#.,,<0>"(i64 ptrtoint( ptr @"trait_specificity_scalar#constant#2" to i64 ), i64 %"tmp#1##0")
   ret i64 %"tmp#10##0"
+}
+
+define external fastcc i64 @"trait_specificity_scalar#.render#adapter<0>"(i64 %"x##0") {
+  %"tmp#0##0" = tail call fastcc i64 @"trait_specificity_scalar#.render<0>"(i64 %"x##0")
+  ret i64 %"tmp#0##0"
 }
 
 define external fastcc i64 @"trait_specificity_scalar#.trait_specificity_scalar<0>"(i64 %"value##0") {

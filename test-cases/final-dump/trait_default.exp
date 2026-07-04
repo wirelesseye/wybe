@@ -141,7 +141,7 @@ proc = > public {inline} (1 calls)
 
 proc greet#adapter > {noinline} (0 calls)
 0: trait_default_silent.greet#adapter<0>
-greet#adapter([x##0:T<:trait_default_greeter], ?#result##0:wybe.string)<{}; {}; {}>:
+greet#adapter(x##0:T<:trait_default_greeter, ?#result##0:wybe.string)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign llvm move("default greeting":wybe.string, ?#result##0:wybe.string) @trait_default_greeter:nn:nn
@@ -180,7 +180,7 @@ define external fastcc i1 @"trait_default_silent#.=<0>"() {
   ret i1 1
 }
 
-define external fastcc i64 @"trait_default_silent#.greet#adapter<0>"() {
+define external fastcc i64 @"trait_default_silent#.greet#adapter<0>"(i64 %"x##0") {
   %"tmp#2##0" = ptrtoint ptr @"trait_default_greeter#constant#1" to i64
   ret i64 %"tmp#2##0"
 }

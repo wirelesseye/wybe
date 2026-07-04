@@ -9,8 +9,8 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_multiple_trait_params.<0>
   constants       : 0:: CStringInfo {cstringChars = "John"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.add_person<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_multiple_trait_params.group, vtableImplType = trait_multiple_trait_params.school}, vtableMod = ["trait_multiple_trait_params"]}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.person_name<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_multiple_trait_params.person, vtableImplType = trait_multiple_trait_params.student}, vtableMod = ["trait_multiple_trait_params"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.add_person#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_multiple_trait_params.group, vtableImplType = trait_multiple_trait_params.school}, vtableMod = ["trait_multiple_trait_params"]}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.person_name#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_multiple_trait_params.person, vtableImplType = trait_multiple_trait_params.student}, vtableMod = ["trait_multiple_trait_params"]}
                     3:: StructInfo {structSize = 16, structData = [IntStructMember 4 8,PointerStructMember c"John"]}
   imports         : use trait_multiple_trait_params.group
                     use trait_multiple_trait_params.person
@@ -52,7 +52,7 @@ proc #cont#1 > {semipure} (2 calls)
 
 
 
-proc add_person > {inline} (0 calls)
+proc add_person > {inline} (1 calls)
 0: trait_multiple_trait_params.add_person<0>
 add_person(x##0:trait_multiple_trait_params.school, ?x##1:trait_multiple_trait_params.school, person##0:Type0<:trait_multiple_trait_params.person <{}; {}; {2}>, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
@@ -65,12 +65,32 @@ add_person(x##0:trait_multiple_trait_params.school, ?x##1:trait_multiple_trait_p
     foreign lpvm cast(~tmp#2##0:wybe.list(wybe.string), ?x##1:trait_multiple_trait_params.school) @trait_multiple_trait_params:nn:nn
 
 
-proc person_name > {inline} (0 calls)
+proc add_person#adapter > {noinline} (0 calls)
+0: trait_multiple_trait_params.add_person#adapter<0>
+add_person#adapter(x##0:Type0<:trait_multiple_trait_params.group, ?x##1:Type0<:trait_multiple_trait_params.group, person##0:Type1<:trait_multiple_trait_params.person, #vtable##0:opaque)<{}; {}; {}>:
+  AliasPairs: [(x##0,x##1)]
+  InterestingCallProperties: []
+    foreign lpvm cast(~person##0:Type1<:trait_multiple_trait_params.person, ?person#adapter2##0:Type0<:trait_multiple_trait_params.person)
+    trait_multiple_trait_params.person.person_name<0>(~person#adapter2##0:Type0<:trait_multiple_trait_params.person, ?tmp#3##0:wybe.string, ~#vtable##0:opaque)<{}; {}; {0}> #1 @trait_multiple_trait_params:nn:nn
+    foreign lpvm alloc(16:wybe.int, ?tmp#5##0:wybe.list(wybe.string)) @trait_multiple_trait_params:nn:nn
+    foreign lpvm mutate(~tmp#5##0:wybe.list(wybe.string), ?tmp#6##0:wybe.list(wybe.string), 0:wybe.int, 1:wybe.int, 16:wybe.int, 0:wybe.int, ~tmp#3##0:wybe.string) @trait_multiple_trait_params:nn:nn
+    foreign lpvm mutate(~tmp#6##0:wybe.list(wybe.string), ?x##1:wybe.list(wybe.string), 8:wybe.int, 1:wybe.int, 16:wybe.int, 0:wybe.int, ~x##0:wybe.list(wybe.string)) @trait_multiple_trait_params:nn:nn
+
+
+proc person_name > {inline} (1 calls)
 0: trait_multiple_trait_params.person_name<0>
 person_name(x##0:trait_multiple_trait_params.student, ?#result##0:wybe.string)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign lpvm cast(~x##0:trait_multiple_trait_params.student, ?#result##0:wybe.string) @trait_multiple_trait_params:nn:nn
+
+
+proc person_name#adapter > {noinline} (0 calls)
+0: trait_multiple_trait_params.person_name#adapter<0>
+person_name#adapter(x##0:Type0<:trait_multiple_trait_params.person, ?#result##0:wybe.string)<{}; {}; {}>:
+  AliasPairs: [(#result##0,x##0)]
+  InterestingCallProperties: []
+    foreign llvm move(~x##0:Type0<:trait_multiple_trait_params.person, ?#result##0:wybe.string) @trait_multiple_trait_params:nn:nn
 
   LLVM code       :
 
@@ -81,8 +101,8 @@ source_filename = "!ROOT!/final-dump/trait_multiple_trait_params.wybe"
 target triple   = ????
 
 @"trait_multiple_trait_params#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"John\00", align 8
-@"#vtable##trait_multiple_trait_params#.group##trait_multiple_trait_params#.school##trait_multiple_trait_params#" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.add_person<0>" }, align 8
-@"#vtable##trait_multiple_trait_params#.person##trait_multiple_trait_params#.student##trait_multiple_trait_params#" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.person_name<0>" }, align 8
+@"#vtable##trait_multiple_trait_params#.group##trait_multiple_trait_params#.school##trait_multiple_trait_params#" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.add_person#adapter<0>" }, align 8
+@"#vtable##trait_multiple_trait_params#.person##trait_multiple_trait_params#.student##trait_multiple_trait_params#" = unnamed_addr constant {ptr} { ptr @"trait_multiple_trait_params#.person_name#adapter<0>" }, align 8
 @"trait_multiple_trait_params#constant#3" = private unnamed_addr constant {i64, ptr} { i64 4, ptr @"trait_multiple_trait_params#constant#0" }, align 8
 
 declare external fastcc void @"wybe#.string#.print<0>"(i64)
@@ -126,7 +146,23 @@ define external fastcc i64 @"trait_multiple_trait_params#.add_person<0>"(i64 %"x
   ret i64 %"tmp#9##0"
 }
 
+define external fastcc i64 @"trait_multiple_trait_params#.add_person#adapter<0>"(i64 %"x##0", i64 %"person##0", ptr %"#vtable##0") {
+  %"tmp#3##0" = tail call fastcc i64 @"trait_multiple_trait_params#.person#.person_name<0>"(i64 %"person##0", ptr %"#vtable##0")
+  %"tmp#8##0" = call ccc ptr @wybe_malloc(i32 16)
+  %"tmp#5##0" = ptrtoint ptr %"tmp#8##0" to i64
+  %"tmp#9##0" = inttoptr i64 %"tmp#5##0" to ptr
+  store i64 %"tmp#3##0", ptr %"tmp#9##0"
+  %"tmp#10##0" = add i64 %"tmp#5##0", 8
+  %"tmp#11##0" = inttoptr i64 %"tmp#10##0" to ptr
+  store i64 %"x##0", ptr %"tmp#11##0"
+  ret i64 %"tmp#5##0"
+}
+
 define external fastcc i64 @"trait_multiple_trait_params#.person_name<0>"(i64 %"x##0") {
+  ret i64 %"x##0"
+}
+
+define external fastcc i64 @"trait_multiple_trait_params#.person_name#adapter<0>"(i64 %"x##0") {
   ret i64 %"x##0"
 }
 

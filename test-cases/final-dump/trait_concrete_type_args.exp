@@ -10,8 +10,8 @@ AFTER EVERYTHING:
   public procs    : trait_concrete_type_args.<0>
   constants       : 0:: CStringInfo {cstringChars = "boxed int"}
                     1:: CStringInfo {cstringChars = "boxed float"}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render<1>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_concrete_type_args.printable, vtableImplType = trait_concrete_type_args.box(wybe.float)}, vtableMod = ["trait_concrete_type_args"]}
-                    3:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_concrete_type_args.printable, vtableImplType = trait_concrete_type_args.box(wybe.int)}, vtableMod = ["trait_concrete_type_args"]}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_concrete_type_args.printable, vtableImplType = trait_concrete_type_args.box(wybe.float)}, vtableMod = ["trait_concrete_type_args"]}
+                    3:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render#adapter<1>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_concrete_type_args.printable, vtableImplType = trait_concrete_type_args.box(wybe.int)}, vtableMod = ["trait_concrete_type_args"]}
                     4:: StructInfo {structSize = 16, structData = [IntStructMember 11 8,PointerStructMember c"boxed float"]}
                     5:: StructInfo {structSize = 16, structData = [IntStructMember 9 8,PointerStructMember c"boxed int"]}
   imports         : use trait_concrete_type_args.box
@@ -39,18 +39,32 @@ module top-level code > public {semipure} (0 calls)
     foreign lpvm store(~%tmp#19##0:wybe.phantom, <<wybe.io.io>>:wybe.phantom) @trait_concrete_type_args:nn:nn
 
 
-proc render > {inline} (0 calls)
+proc render > {inline} (1 calls)
 0: trait_concrete_type_args.render<0>
 render([x##0:trait_concrete_type_args.box(wybe.int)], ?#result##0:wybe.string)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign llvm move("boxed int":wybe.string, ?#result##0:wybe.string) @trait_concrete_type_args:nn:nn
-proc render > {inline} (0 calls)
+proc render > {inline} (1 calls)
 1: trait_concrete_type_args.render<1>
 render([x##0:trait_concrete_type_args.box(wybe.float)], ?#result##0:wybe.string)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign llvm move("boxed float":wybe.string, ?#result##0:wybe.string) @trait_concrete_type_args:nn:nn
+
+
+proc render#adapter > {noinline} (0 calls)
+0: trait_concrete_type_args.render#adapter<0>
+render#adapter(x##0:Type0<:trait_concrete_type_args.printable, ?#result##0:wybe.string)<{}; {}; {}>:
+  AliasPairs: []
+  InterestingCallProperties: []
+    foreign llvm move("boxed float":wybe.string, ?#result##0:wybe.string) @trait_concrete_type_args:nn:nn
+proc render#adapter > {noinline} (0 calls)
+1: trait_concrete_type_args.render#adapter<1>
+render#adapter(x##0:Type0<:trait_concrete_type_args.printable, ?#result##0:wybe.string)<{}; {}; {}>:
+  AliasPairs: []
+  InterestingCallProperties: []
+    foreign llvm move("boxed int":wybe.string, ?#result##0:wybe.string) @trait_concrete_type_args:nn:nn
 
   LLVM code       :
 
@@ -62,8 +76,8 @@ target triple   = ????
 
 @"trait_concrete_type_args#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"boxed int\00", align 8
 @"trait_concrete_type_args#constant#1" = private unnamed_addr constant [ ?? x i8 ] c"boxed float\00", align 8
-@"#vtable##trait_concrete_type_args#.printable##trait_concrete_type_args#.box(wybe#.float)##trait_concrete_type_args#" = unnamed_addr constant {ptr} { ptr @"trait_concrete_type_args#.render<1>" }, align 8
-@"#vtable##trait_concrete_type_args#.printable##trait_concrete_type_args#.box(wybe#.int)##trait_concrete_type_args#" = unnamed_addr constant {ptr} { ptr @"trait_concrete_type_args#.render<0>" }, align 8
+@"#vtable##trait_concrete_type_args#.printable##trait_concrete_type_args#.box(wybe#.float)##trait_concrete_type_args#" = unnamed_addr constant {ptr} { ptr @"trait_concrete_type_args#.render#adapter<0>" }, align 8
+@"#vtable##trait_concrete_type_args#.printable##trait_concrete_type_args#.box(wybe#.int)##trait_concrete_type_args#" = unnamed_addr constant {ptr} { ptr @"trait_concrete_type_args#.render#adapter<1>" }, align 8
 @"trait_concrete_type_args#constant#4" = private unnamed_addr constant {i64, ptr} { i64 11, ptr @"trait_concrete_type_args#constant#1" }, align 8
 @"trait_concrete_type_args#constant#5" = private unnamed_addr constant {i64, ptr} { i64 9, ptr @"trait_concrete_type_args#constant#0" }, align 8
 
@@ -89,6 +103,16 @@ define external fastcc i64 @"trait_concrete_type_args#.render<0>"() {
 define external fastcc i64 @"trait_concrete_type_args#.render<1>"() {
   %"tmp#5##0" = ptrtoint ptr @"trait_concrete_type_args#constant#4" to i64
   ret i64 %"tmp#5##0"
+}
+
+define external fastcc i64 @"trait_concrete_type_args#.render#adapter<0>"(i64 %"x##0") {
+  %"tmp#1##0" = ptrtoint ptr @"trait_concrete_type_args#constant#4" to i64
+  ret i64 %"tmp#1##0"
+}
+
+define external fastcc i64 @"trait_concrete_type_args#.render#adapter<1>"(i64 %"x##0") {
+  %"tmp#1##0" = ptrtoint ptr @"trait_concrete_type_args#constant#5" to i64
+  ret i64 %"tmp#1##0"
 }
 
 --------------------------------------------------

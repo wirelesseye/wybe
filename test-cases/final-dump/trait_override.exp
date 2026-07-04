@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_override.<0>
   constants       : 0:: CStringInfo {cstringChars = "Ada"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe<0>], vtableExternal = True, vtableSpec = VTableSpec {vtableTrait = trait_override_named, vtableImplType = trait_override_person}, vtableMod = ["trait_override_person"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe#adapter<0>], vtableExternal = True, vtableSpec = VTableSpec {vtableTrait = trait_override_named, vtableImplType = trait_override_person}, vtableMod = ["trait_override_person"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"Ada"]}
   imports         : use trait_override_named
                     use trait_override_person
@@ -54,7 +54,7 @@ target triple   = ????
 @"#vtable##trait_override_named##trait_override_person##trait_override_person#" = external unnamed_addr constant {ptr}, align 8
 @"trait_override#constant#2" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_override#constant#0" }, align 8
 
-declare external fastcc i64 @"trait_override_person#.describe<0>"(i64)
+declare external fastcc i64 @"trait_override_person#.describe#adapter<0>"(i64)
 declare external fastcc void @"wybe#.string#.print<0>"(i64)
 declare external fastcc void @"wybe#.string#.print<0>[410bae77d3]"(i64)
 declare external ccc void @putchar(i8)
@@ -142,7 +142,7 @@ define external fastcc i64 @"trait_override_named#.describe<1>"() {
                     trait_override_person.trait_override_person<0>
                     trait_override_person.trait_override_person<1>
                     trait_override_person.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_override_named, vtableImplType = trait_override_person}, vtableMod = ["trait_override_person"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_override_named, vtableImplType = trait_override_person}, vtableMod = ["trait_override_person"]}
   imports         : use trait_override_named
                     use wybe
   resources       : 
@@ -156,12 +156,20 @@ proc = > public {inline} (1 calls)
     foreign llvm icmp_eq(~#left##0:trait_override_person, ~#right##0:trait_override_person, ?#success##0:wybe.bool)
 
 
-proc describe > public {inline} (0 calls)
+proc describe > public {inline} (1 calls)
 0: trait_override_person.describe<0>
 describe(x##0:trait_override_person, ?#result##0:wybe.string)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign lpvm cast(~x##0:trait_override_person, ?#result##0:wybe.string) @trait_override_person:nn:nn
+
+
+proc describe#adapter > {noinline} (0 calls)
+0: trait_override_person.describe#adapter<0>
+describe#adapter(x##0:Type0<:trait_override_named, ?#result##0:wybe.string)<{}; {}; {}>:
+  AliasPairs: [(#result##0,x##0)]
+  InterestingCallProperties: []
+    foreign llvm move(~x##0:Type0<:trait_override_named, ?#result##0:wybe.string) @trait_override_person:nn:nn
 
 
 proc name > public {inline} (1 calls)
@@ -208,7 +216,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_override_person.wybe"
 target triple   = ????
 
-@"#vtable##trait_override_named##trait_override_person##trait_override_person#" = unnamed_addr constant {ptr} { ptr @"trait_override_person#.describe<0>" }, align 8
+@"#vtable##trait_override_named##trait_override_person##trait_override_person#" = unnamed_addr constant {ptr} { ptr @"trait_override_person#.describe#adapter<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
@@ -218,6 +226,10 @@ define external fastcc i1 @"trait_override_person#.=<0>"(i64 %"#left##0", i64 %"
 }
 
 define external fastcc i64 @"trait_override_person#.describe<0>"(i64 %"x##0") {
+  ret i64 %"x##0"
+}
+
+define external fastcc i64 @"trait_override_person#.describe#adapter<0>"(i64 %"x##0") {
   ret i64 %"x##0"
 }
 

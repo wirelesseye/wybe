@@ -38,6 +38,7 @@ module AST (
   setExpFlowType,
   TypeRepresentation(..), TypeFamily(..), typeFamily,
   defaultTypeRepresentation, typeRepSize, integerTypeRep, typeSize,
+  typeNeedsBoxing,
   defaultTypeModifiers, lookupTypeRepresentation, typeRepresentation,
   lookupModuleRepresentation, argIsReal,
   paramIsPhantom, argIsPhantom, typeIsPhantom, repIsPhantom,
@@ -2375,6 +2376,7 @@ data ProcVariant
     | GeneratedProc
     | AnonymousProc
     | ClosureProc ProcSpec Bool
+    | AdapterProc
     deriving (Eq, Ord, Show, Generic)
 
 
@@ -3609,6 +3611,13 @@ typeIsPhantom ty = do
     logAST $ "Type " ++ show ty ++ " is "
              ++ (if result then "" else "NOT ") ++ "phantom"
     return result
+
+
+-- | Test if a type needs to be boxed when carrying a large concrete value.
+typeNeedsBoxing :: TypeSpec -> Bool
+typeNeedsBoxing AnyType        = True
+typeNeedsBoxing TypeVariable{} = True
+typeNeedsBoxing _              = False
 
 
 -- |Is the specified type representation a phantom type?

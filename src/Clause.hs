@@ -565,16 +565,7 @@ adaptTraitImplProc vspec absProcSpec implProcSpec = do
     absProcDef <- getProcDef absProcSpec
     implProcDef <- getProcDef implProcSpec
     let adapterParams = vtableSlotParams vspec absProcDef
-        implParams = procABIParams implProcDef
-    adapterReps <- abiParamReps adapterParams
-    implReps <- abiParamReps implParams
-    let compatible = adapterReps == implReps
-    logMsg Clause $ "Vtable ABI for " ++ show implProcSpec
-        ++ ": abstract " ++ show adapterReps
-        ++ ", concrete " ++ show implReps
-    if compatible
-        then return implProcSpec
-        else generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef
+    generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef
 
 
 -- |The ABI used by a virtual call through a vtable slot.  This is the abstract
@@ -589,14 +580,6 @@ vtableSlotParams (VTableSpec trait _) absProcDef = do
             ]
     let forwardedVTableParams = [vtableParam i | (i, _) <- zip [0..] forwardedBounds]
     procOrdinaryABIParams absProcDef ++ forwardedVTableParams
-
-
--- |Return the canonical primitive ABI parameters for a proc, including the
--- vtable parameters needed for its bounded type variables.
-procABIParams :: ProcDef -> [PrimParam]
-procABIParams procDef =
-    procOrdinaryABIParams procDef ++
-    [vtableParam i | (i, _) <- zip [0..] (procBoundedTypeParams procDef)]
 
 
 -- |Return the canonical primitive ABI parameters for the source-level ordinary
@@ -620,14 +603,6 @@ compileABIParams = concatMap compileABIParam
     outNum flow = if flowsIn flow then 1 else 0
 
 
--- |Return the runtime type representations of the real ABI parameters, omitting
--- any phantom parameters.
-abiParamReps :: [PrimParam] -> Compiler [TypeRepresentation]
-abiParamReps params = do
-    real <- realParams params
-    mapM (typeRepresentation . primParamType) real
-
-
 generateAdapter :: VTableSpec -> ProcDef -> [PrimParam] -> ProcSpec -> ProcDef
                   -> Compiler ProcSpec
 generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
@@ -640,9 +615,9 @@ generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
             ++ show implProcSpec ++ ": abstract params "
             ++ show adapterOrdinaryParams ++ ", implementation params "
             ++ show implOrdinaryParams
-    let (preCasts, implOrdinaryArgs, postCasts) =
-            unzip3 $ zipWith3 adapterArgBridge [0..]
-                adapterOrdinaryParams implOrdinaryParams
+    bridges <- zipWith3M adapterArgBridge [0..]
+        adapterOrdinaryParams implOrdinaryParams
+    let (preCasts, implOrdinaryArgs, postCasts) = unzip3 bridges
         implCallArgs = implOrdinaryArgs
             ++ adapterVTableArgs vspec absProcDef implProcDef adapterParams
     let adapterName = procName absProcDef ++ adapterNamePostfix
@@ -659,7 +634,7 @@ generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
         adapter = ProcDef adapterName (ProcProto adapterName [] [])
             (ProcDefPrim pSpec proto body emptyProcAnalysis Map.empty)
             Nothing 0 1 Map.empty Private Nothing (procDetism implProcDef)
-            NoInline (procImpurity implProcDef) GeneratedProc
+            NoInline (procImpurity implProcDef) AdapterProc
             (initSuperprocSpec Private) Map.empty [] 0
     adapterSpec <- addProcDef adapter `inModule` adapterMod
     updateProcDef
@@ -676,33 +651,54 @@ generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
 -- |Bridge one ordinary adapter parameter to the corresponding implementation
 -- parameter.  The adapter exposes the vtable slot ABI, so any concrete
 -- implementation type with a different source type must be reached through an
--- explicit LPVM cast.
+-- LPVM cast or, for wide concrete values in generic slots, a box/unbox.
 adapterArgBridge :: Int -> PrimParam -> PrimParam
-                 -> ([Placed Prim], PrimArg, [Placed Prim])
+                 -> Compiler ([Placed Prim], PrimArg, [Placed Prim])
 adapterArgBridge idx adapterParam implParam
     | primParamFlow adapterParam /= primParamFlow implParam =
         shouldnt $ "adapter param flow mismatch: " ++ show adapterParam
             ++ " vs " ++ show implParam
     | primParamType adapterParam == primParamType implParam =
-        ([], primParamToArg adapterParam, [])
-    | otherwise =
-        case primParamFlow implParam of
-            FlowIn ->
+        return ([], primParamToArg adapterParam, [])
+    | otherwise = do
+        implSize <- typeRepSize <$> typeRepresentation implTy
+        let useBox = typeNeedsBoxing adapterTy && implSize > wordSize
+            implSizeBytes = ArgInt (fromIntegral $ implSize `ceilDiv` byteBits) intType
+            zero = ArgInt 0 intType
+        return $ case (primParamFlow implParam, useBox) of
+            (FlowIn, True) ->
+                ([Unplaced $ PrimForeign "lpvm" "access" []
+                    [adapterIn, zero, implSizeBytes, zero, implOut]], implIn, [])
+            (FlowIn, False) ->
                 ([Unplaced $ primCast implOut adapterIn], implIn, [])
-            FlowOut ->
+            (FlowOut, True) ->
+                ([]
+                , implOut
+                , [ Unplaced $ PrimForeign "lpvm" "alloc" []
+                        [implSizeBytes, adapterBoxOut]
+                  , Unplaced $ PrimForeign "lpvm" "mutate" []
+                        [adapterBoxIn, adapterOut, zero, zero, implSizeBytes, zero, implIn]
+                  ])
+            (FlowOut, False) ->
                 ([], implOut, [Unplaced $ primCast adapterOut implIn])
-            flow ->
+            (flow, _) ->
                 shouldnt $ "unexpected adapter param flow " ++ show flow
   where
+    adapterTy = primParamType adapterParam
     implTy = primParamType implParam
     implFlowType = primParamFlowType implParam
     tmpName = PrimVarName
         (primVarName (primParamName implParam) ++ adapterNamePostfix ++ show idx)
         0
+    boxName = PrimVarName
+        (primVarName (primParamName adapterParam) ++ adapterNamePostfix ++ "box" ++ show idx)
+        0
     implIn = ArgVar tmpName implTy FlowIn implFlowType False
     implOut = ArgVar tmpName implTy FlowOut implFlowType False
     adapterIn = primParamToArg adapterParam
     adapterOut = primParamToArg adapterParam
+    adapterBoxIn = ArgVar boxName AnyType FlowIn Ordinary False
+    adapterBoxOut = ArgVar boxName AnyType FlowOut Ordinary False
 
 
 adapterVTableArgs :: VTableSpec -> ProcDef -> ProcDef -> [PrimParam] -> [PrimArg]

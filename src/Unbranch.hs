@@ -803,13 +803,6 @@ unbranchExp callerTy calleeTy exp pos = do
     else return ([], maybePlace exp pos, [])
 
 
--- | Test if a type needs to be boxed for large types
-typeNeedsBoxing :: TypeSpec -> Bool
-typeNeedsBoxing AnyType        = True -- conservative 
-typeNeedsBoxing TypeVariable{} = True
-typeNeedsBoxing _              = False 
-
-
 -- | Stmts to box and unbox an expression of a given size, with the boxed variable.
 boxUnbox :: OptPos -> VarName -> Int -> Exp -> TypeSpec -> FlowDirection -> ([Placed Stmt], Placed Exp, [Placed Stmt]) 
 boxUnbox pos box sizeBits exp ty flow = 

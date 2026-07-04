@@ -46,13 +46,14 @@ procExpansion pspec def = do
     let tmp = procTmpCount def
     let (ins,outs) = inputOutputParams proto
     isClosure <- isClosureProc pspec
+    let fixedABI = procVariant def == AdapterProc
     let st = initExpanderState (procCallSiteCount def)
     let PrimProto _ params (GlobalFlows gIns gOuts gParams) = proto
     (st', tmp', used, stored, varFlows, body') 
         <- buildBody tmp (Map.fromSet id outs) params
             $ execStateT (expandBody body) st
-    let params' = updateParamGlobalFlows varFlows 
-                . markParamNeededness isClosure used ins <$> params
+    let neededness = if fixedABI then id else markParamNeededness isClosure used ins
+        params' = updateParamGlobalFlows varFlows . neededness <$> params
     let globals' = GlobalFlows (USet.whenFinite (`Set.difference` stored) gIns) gOuts gParams
     let proto' = proto {primProtoParams = params',
                         primProtoGlobalFlows = globals'}
