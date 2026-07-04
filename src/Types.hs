@@ -1465,7 +1465,6 @@ procToPartial callFlows hasBang info@FirstInfo{fiPartial=False,
                                                fiDetism=detism,
                                                fiImpurity=impurity}
     | not hasBang && not (List.null callFlows) && last callFlows == ParamOut
-                  && any (/= ParamOut) higherFls
                   && (length callFlows <= length tys
                      || length callFlows <= length tys + 1 && usesResources)
         = (Just info{fiPartial=True,
@@ -2198,9 +2197,10 @@ invalidType (HigherOrderType _ tfs) = any (invalidType . typeFlowType) tfs
 invalidType _ = False
 
 
--- |A bounded generic caller type cannot be passed to a concrete parameter just
--- because it has trait bounds.  Generic-to-generic calls are allowed through to
--- unification, which can merge the two variables' bounds.
+-- |A bounded caller parameter type cannot be passed to a concrete parameter
+-- just because it has trait bounds.  Bounded variables produced inside the
+-- body are allowed through to unification, which can check known trait
+-- implementations and specialize outputs.
 typeVarMismatch :: TypeSpec -> TypeSpec -> Typed Bool
 typeVarMismatch callerTy@TypeVariable{} calleeTy = do
     callerBounds <- typeVarBounds callerTy
@@ -2208,8 +2208,24 @@ typeVarMismatch callerTy@TypeVariable{} calleeTy = do
         then return False
         else case calleeTy of
             TypeVariable{} -> return False
-            _ -> return True
+            _ -> typeVarFromInputParam callerTy
 typeVarMismatch _ _ = return False
+
+
+-- |Return true if the type variable appears in an input parameter of the proc
+-- currently being checked.
+typeVarFromInputParam :: TypeSpec -> Typed Bool
+typeVarFromInputParam ty = do
+    def <- gets tyProcDef
+    let inputParams =
+            [param
+              | param <- content <$> procProtoParams (procProto def)
+              , flowsIn (paramFlow param)]
+        declaredVars = Set.unions $ typeVarSet . paramType <$> inputParams
+    inferredTypes <- mapM (varType . paramName) inputParams
+    let inferredVars = Set.unions $ typeVarSet <$> inferredTypes
+        inputParamVars = declaredVars `Set.union` inferredVars
+    return $ not . Set.null $ typeVarSet ty `Set.intersection` inputParamVars
 
 
 -- | Canonicalise a list of types, with type variables starting from the
@@ -3256,12 +3272,14 @@ modecheckDisj final preRestores disjAssigned (stmt:stmts) = do
 finaliseBestMatch :: Bool -> Bool -> OptPos -> [Placed Exp] -> Stmt
                   -> [(CallInfo, Typing)] -> Moded [Placed Stmt]
 finaliseBestMatch resourceful final pos args' stmt' matches = do
-    preferred <- lift2 $ mostSpecificMatch matches
+    actualTypes <- lift $ mapM (expType >=> ultimateType) args'
+    matches' <- lift $ preferTraitMatches actualTypes matches
+    preferred <- lift2 $ mostSpecificMatch matches'
     let ((match, typing), rest, warn) = case preferred of
             Just selected ->
-                (selected, List.delete selected matches, False)
+                (selected, List.delete selected matches', False)
             Nothing ->
-                (head matches, tail matches, True)
+                (head matches', tail matches', True)
     lift $ put typing
     when (warn && not (List.null rest)) $
         modeError $ ReasonWarnMultipleMatches match (fst <$> rest) pos
