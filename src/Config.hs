@@ -108,12 +108,12 @@ initProcName = ""
 
 -- | Prefix used for generated vtable symbols.
 vtableNamePrefix :: String
-vtableNamePrefix = "#vtable"
+vtableNamePrefix = specialName "vtable"
 
 
 -- | Postfix used for generated adapter symbols.
 adapterNamePostfix :: String
-adapterNamePostfix = "#adapter"
+adapterNamePostfix = specialName "adapter"
 
 
 -- |Determining word size of the machine in bits
