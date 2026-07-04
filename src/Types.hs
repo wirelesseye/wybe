@@ -47,9 +47,6 @@ import Data.Tuple.HT (mapSnd)
 type Validator = StateT ValidatorState Compiler
 
 data ValidatorState = ValidatorState {
-    valTypeVarBoundDict :: Map TypeVarName (Set TraitSpec),
-                            -- ^ Mapping from type variable names to
-                            -- their trait bounds.
     valTraitTypeDict :: Map TraitSpec TypeSpec,
                             -- ^ Generated type variables that look like
                             -- `Type0<:comparable` for trait types like
@@ -96,8 +93,8 @@ validateProcDefTypes name def = do
     let tvarCount = procFauxTypeVarCount def
     logTypes $ "Validating def of " ++ showProcName name
     (params', finalState) <- runStateT (traverse (updatePlacedM $ validateParam name pos public) params)
-                             $ ValidatorState Map.empty Map.empty tvarCount
-    let boundedTypeParams = getBoundedTypeParams (valTypeVarBoundDict finalState) params'
+                             $ ValidatorState Map.empty tvarCount
+    let boundedTypeParams = getBoundedTypeParams params'
     return $ def { procProto = proto { procProtoParams = params' }
                  , procFauxTypeVarCount = valTypeVarCounter finalState
                  , procBoundedTypeParams = boundedTypeParams }
@@ -121,14 +118,12 @@ validateParamType ppos ty = do
         TypeSpec{typeParams=params} -> do
             traitType <- lift $ isTraitType ty'
             params' <- mapM (validateParamType ppos) params
+            let ty'' = ty'{typeParams=params'}
             if traitType
-                then validateParamTraitType ty'
-                else return ty'{typeParams=params'}
+                then validateParamTraitType ty''
+                else return ty''
         TypeVariable name bounds -> do
             validateTypeVarBounds ppos bounds
-            modify $ \st -> st {
-                valTypeVarBoundDict = Map.insertWith Set.union name
-                    bounds (valTypeVarBoundDict st) }
             return ty'
         HigherOrderType{higherTypeParams=tfs} -> do
             types' <- mapM (validateParamType ppos . typeFlowType) tfs
@@ -158,8 +153,6 @@ validateParamTraitType tspec = do
             let name = FauxTypeVar next
             let typ = TypeVariable name (Set.singleton tspec)
             modify $ \st -> st {valTypeVarCounter = next+1
-                               ,valTypeVarBoundDict = Map.insertWith Set.union name
-                                    (Set.singleton tspec) (valTypeVarBoundDict st)
                                ,valTraitTypeDict = Map.insert tspec typ $ valTraitTypeDict st}
             return typ
 
@@ -171,13 +164,12 @@ checkDeclIfPublic pname ppos public ty =
                         " with undeclared parameter or return type") ppos
 
 
-getBoundedTypeParams :: Map TypeVarName (Set TraitSpec) -> [Placed Param] -> [BoundedTypeVar]
-getBoundedTypeParams varboundDict params = concatMap boundedParams typeVarNames
+getBoundedTypeParams :: [Placed Param] -> [BoundedTypeVar]
+getBoundedTypeParams params = concatMap boundedParams typeVarNames
   where
     paramTypes = paramType . content <$> params
     typeVarNames = List.nub $ concatMap typeVarNamesIn paramTypes
-    declaredBounds = Map.unionsWith Set.union $ declaredTypeVarBounds <$> paramTypes
-    allBounds = Map.unionWith Set.union varboundDict declaredBounds
+    allBounds = Map.unionsWith Set.union $ declaredTypeVarBounds <$> paramTypes
     boundedParams name =
         [(name, bound) | bound <- Set.toAscList $
             Map.findWithDefault Set.empty name allBounds]
@@ -2795,9 +2787,7 @@ modeCheckProcDecl pdef = do
     typeErrors modeErrs
     params' <- updateParamTypes posParams
     let proto' = proto { procProtoParams = params' }
-    let inferredBounds = Map.unionsWith Set.union $
-            declaredTypeVarBounds . paramType . content <$> params'
-        boundedTypeParams' = getBoundedTypeParams inferredBounds params'
+    let boundedTypeParams' = getBoundedTypeParams params'
     let pdef' = pdef { procProto = proto',
                         procTmpCount = tmpCount',
                         procBoundedTypeParams = boundedTypeParams',

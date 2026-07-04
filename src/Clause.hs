@@ -160,7 +160,7 @@ compileProc proc procID =
         let procName = procProtoName proto
         let params = content <$> procProtoParams proto
         let boundedTypeParams = procBoundedTypeParams proc
-        let vTableParams = [vtableParam i | (i, _) <- zip [0..] boundedTypeParams]
+        let vTableParams = vtableParamsFor boundedTypeParams
         let vTableParamDict = Map.fromList (zip boundedTypeParams vTableParams)
         modify (\st -> st {nextCallSiteID=procCallSiteCount proc
                           ,vTableParamDict=vTableParamDict})
@@ -513,6 +513,11 @@ vtableParam index =
             FlowIn VTable (ParamInfo False emptyGlobalFlows)
 
 
+vtableParamsFor :: [BoundedTypeVar] -> [PrimParam]
+vtableParamsFor bounds =
+    [vtableParam i | (i, _) <- zip [0..] bounds]
+
+
 compileTraitImpls :: ModSpec -> Compiler ()
 compileTraitImpls thisMod = do
     reenterModule thisMod
@@ -572,14 +577,17 @@ adaptTraitImplProc vspec absProcSpec implProcSpec = do
 -- method's primitive parameters, except that the dispatching vtable parameter
 -- itself is supplied by the loaded vtable and is not passed to the target proc.
 vtableSlotParams :: VTableSpec -> ProcDef -> [PrimParam]
-vtableSlotParams (VTableSpec trait _) absProcDef = do
-    let forwardedBounds =
-            [ bounded
-            | bounded@(_, bound) <- procBoundedTypeParams absProcDef
-            , typeModule bound /= typeModule trait
-            ]
-    let forwardedVTableParams = [vtableParam i | (i, _) <- zip [0..] forwardedBounds]
-    procOrdinaryABIParams absProcDef ++ forwardedVTableParams
+vtableSlotParams (VTableSpec trait _) absProcDef =
+    procOrdinaryABIParams absProcDef
+        ++ vtableParamsFor (forwardedVTableBounds trait absProcDef)
+
+
+forwardedVTableBounds :: TraitSpec -> ProcDef -> [BoundedTypeVar]
+forwardedVTableBounds dispatchTrait absProcDef =
+    [ bounded
+    | bounded@(_, bound) <- procBoundedTypeParams absProcDef
+    , typeModule bound /= typeModule dispatchTrait
+    ]
 
 
 -- |Return the canonical primitive ABI parameters for the source-level ordinary
@@ -711,11 +719,7 @@ adapterVTableArgs vspec@(VTableSpec trait _) absProcDef implProcDef adapterParam
         | (_, param) <- zip forwardedBounds
             (List.filter ((== VTable) . primParamFlowType) adapterParams)
         ]
-    forwardedBounds =
-        [ bounded
-        | bounded@(_, bound) <- procBoundedTypeParams absProcDef
-        , typeModule bound /= dispatchTraitMod
-        ]
+    forwardedBounds = forwardedVTableBounds trait absProcDef
     vtableArg params (_, bound)
         | typeModule bound == dispatchTraitMod =
             (params, ArgVTable (Left vspec) (Representation CPointer))
