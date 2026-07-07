@@ -182,9 +182,7 @@ normaliseTraitImpls = do
     knownTraitImpls' <- Map.fromList <$>
         traverse (uncurry normaliseTraitImpl) (Map.toList knownTraitImpls)
     updateImplementation (\impl -> impl{ modKnownTraitImpls=knownTraitImpls' })
-    thisMod <- getModuleSpec
-    let traitImpls = Map.map (fromMaybe thisMod . content) knownTraitImpls'
-    updateModInterface (\int -> int{ traitImpls=traitImpls })
+    publishTraitImpls
 
 
 -- |Resolve an unqualified trait impl specification once its defining module is known.

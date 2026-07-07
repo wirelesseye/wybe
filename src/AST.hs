@@ -55,7 +55,7 @@ module AST (
   lookupConstStruct, lookupConstInfo, cStringExpr,
   StructInfo(..), ConstValue(..), constValueSize, constantValue, closureStructId, constValueRepresentation,
   constValueAtOffset, constValuePrimArg, constValueExp,
-  ImportSpec(..), importSpec, Pragma(..), addPragma,
+  ImportSpec(..), ImportPhase(..), importSpec, Pragma(..), addPragma,
   descendentModules, sameOriginModules,
   refersTo,
   enterModule, reenterModule, exitModule, reexitModule, inModule,
@@ -108,8 +108,8 @@ module AST (
   getOrigin, getSource, getDirectory,
   optionallyPutStr, message, errmsg, warnmsg, (<!>), prettyPos,
   Message(..), queueMessage,
-  genProcName, addImport, doImport, importFromSupermodule, isAncestor, lookupType, lookupType',
-  typeIsUnique, 
+  genProcName, addImport, doImport, importFromSupermodule, publishTraitImpls,
+  isAncestor, lookupType, lookupType', typeIsUnique, 
   ResourceName, ResourceSpec(..), ResourceFlowSpec(..), PrimResourceImpln(..),
   initialisedResources, initialisedVisibleResources,
   addResource, lookupResourceSpec, lookupResource,
@@ -1989,6 +1989,12 @@ data ImportSpec = ImportSpec {
     } deriving (Show, Generic)
 
 
+data ImportPhase =
+    BeforeCompleteNormalisation
+  | AfterCompleteNormalisation
+  deriving (Eq, Show)
+
+
 -- |Create an import spec to import the identifiers specified by the
 --  first argument (or everything public if it is Nothing), either
 --  publicly or privately, as specified by the second argument.
@@ -2015,8 +2021,8 @@ combineImportSpecs (ImportSpec pub1 priv1) (ImportSpec pub2 priv2) =
 -- have been loaded and their imports have been handled.  The case of
 -- mutual dependencies is handled by repeating this until a fixed point
 -- is reached.
-doImport :: ModSpec -> (ImportSpec, InterfaceHash) -> Compiler ()
-doImport mod (imports, _) = do
+doImport :: ImportPhase -> ModSpec -> (ImportSpec, InterfaceHash) -> Compiler ()
+doImport phase mod (imports, _) = do
     currMod <- getModuleSpec
     impl <- getModuleImplementationField id
     logAST $ "Handle importation from " ++ showModSpec mod ++
@@ -2034,7 +2040,10 @@ doImport mod (imports, _) = do
     let importedResources = importsSelected allImports $ pubResources fromIFace
     let importedProcs = Map.map Map.keysSet
                             $ importsSelected allImports $ pubProcs fromIFace
-    let importedTraitImpls = Map.map (Unplaced . Just) $ traitImpls fromIFace
+    let importedTraitImpls
+          | phase == AfterCompleteNormalisation =
+              Map.map (Unplaced . Just) $ traitImpls fromIFace
+          | otherwise = Map.empty
     logAST $ "    importing types    : "
              ++ showModSpecs (snd <$> importedTypesAssoc)
     logAST $ "    importing resources: "
@@ -2071,23 +2080,41 @@ doImport mod (imports, _) = do
     return ()
 
 
--- |Import known types, resources, and procs from the specified module into the
--- current one.  This is used to give a nested submodule access to its parent's
--- members.  It's also used to give the executable module access to the main
--- module of the application.
-importFromSupermodule :: ModSpec -> Compiler ()
-importFromSupermodule modspec = do
+-- |Import known types, resources, procs, and, after trait impl
+-- normalisation, trait impls from the specified module into the current one.
+-- This is used to give a nested submodule access to its parent's members.
+-- It's also used to give the executable module access to the main module of
+-- the application.
+importFromSupermodule :: ImportPhase -> ModSpec -> Compiler ()
+importFromSupermodule phase modspec = do
     impl       <- getLoadedModuleImpln modspec
     kTypes     <- getModuleImplementationField modKnownTypes
     kResources <- getModuleImplementationField modKnownResources
     kProcs     <- getModuleImplementationField modKnownProcs
+    kTraitImpls <- getModuleImplementationField modKnownTraitImpls
     let knownTypes = Map.unionWith Set.union (modKnownTypes impl) kTypes
     let knownResources =
             Map.unionWith Set.union (modKnownResources impl) kResources
     let knownProcs = Map.unionWith Set.union (modKnownProcs impl) kProcs
+    let importedTraitImpls = Map.map (fmap (Just . fromMaybe modspec))
+            (modKnownTraitImpls impl)
+        knownTraitImpls
+          | phase == AfterCompleteNormalisation =
+              Map.union importedTraitImpls kTraitImpls
+          | otherwise = kTraitImpls
     updateModImplementation (\imp -> imp { modKnownTypes = knownTypes,
                                            modKnownResources = knownResources,
-                                           modKnownProcs = knownProcs })
+                                           modKnownProcs = knownProcs,
+                                           modKnownTraitImpls = knownTraitImpls })
+
+
+-- |Publish the currently visible trait implementations in the module interface.
+publishTraitImpls :: Compiler ()
+publishTraitImpls = do
+    thisMod <- getModuleSpec
+    knownTraitImpls <- getModuleImplementationField modKnownTraitImpls
+    let traitImpls = Map.map (fromMaybe thisMod . content) knownTraitImpls
+    updateModInterface (\int -> int{ traitImpls=traitImpls })
 
 
 -- |Check if the second module is an ancestor of the first module
