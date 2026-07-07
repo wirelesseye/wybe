@@ -23,7 +23,7 @@ module AST (
   determinismSeq, determinismProceding, determinismName, determinismCanFail,
   impurityName, impuritySeq, expectedImpurity,
   inliningName,
-  TraitSpec, VTableSpec(..), BoundedTypeVar,
+  TraitSpec, TraitImplSpec(..), VTableSpec, BoundedTypeVar,
   TypeProto(..), TypeModifiers(..), TypeSpec(..), typeVarSet, TypeVarName(..),
   genericType, higherOrderType, isHigherOrder,
   isResourcefulHigherOrder, isTraitType, typeModule,
@@ -1403,7 +1403,7 @@ addProcDef procDef = do
     return spec
 
 
-addTraitImpl :: OptPos -> VTableSpec -> Maybe ModSpec -> Compiler ()
+addTraitImpl :: OptPos -> TraitImplSpec -> Maybe ModSpec -> Compiler ()
 addTraitImpl pos spec mod = do
     updateImplementation (\imp -> imp {
         modKnownTraitImpls = Map.insert spec (maybePlace mod pos) $ modKnownTraitImpls imp })
@@ -1775,7 +1775,7 @@ data ModuleInterface = ModuleInterface {
     pubProcs :: ProcDictionary,
                                      -- ^The procs this module exports
     pubSubmods   :: Map Ident ModSpec, -- ^The submodules this module exports
-    traitImpls :: Map VTableSpec ModSpec,
+    traitImpls :: Map TraitImplSpec ModSpec,
                                      -- ^The defined and imported trait implementations
     dependencies :: Set ModSpec,      -- ^The other modules that must be linked
                                       --  in by modules that depend on this one
@@ -1843,11 +1843,11 @@ data ModuleImplementation = ModuleImplementation {
     modKnownResources :: Map Ident (Set ResourceSpec),
                                               -- ^Resources visible to this mod
     modKnownProcs:: Map Ident (Set ProcSpec), -- ^Procs visible to this module
-    modKnownTraitImpls :: Map VTableSpec (Placed (Maybe ModSpec)),
+    modKnownTraitImpls :: Map TraitImplSpec (Placed (Maybe ModSpec)),
                                               -- ^Trait impls visible to this mod
                                               -- and the mods where they are defined
                                               -- `Nothing` if defined in the current mod
-    modTraitImplProcs :: Map VTableSpec [ProcSpec],
+    modTraitImplProcs :: Map TraitImplSpec [ProcSpec],
                                               -- Procs that satisfie trait impls
     modForeignObjects:: Set FilePath,         -- ^Foreign object files used
     modForeignLibs:: Set String               -- ^Foreign libraries used
@@ -3734,12 +3734,14 @@ data PrimArg
 -- |A trait specification.
 type TraitSpec = TypeSpec
 
-data VTableSpec =
-    VTableSpec {
-        vtableTrait :: TraitSpec,               -- ^The trait spec
-        vtableImplType :: TypeSpec              -- ^The implmentation type spec
+data TraitImplSpec =
+    TraitImplSpec {
+        implTrait :: TraitSpec,                -- ^The implmentation trait spec
+        implType  :: TypeSpec                  -- ^The implmentation type spec
     }
-    deriving (Eq,Ord,Show,Generic)
+    deriving (Eq,Ord,Generic)
+
+type VTableSpec = TraitImplSpec
 
 type BoundedTypeVar = (TypeVarName, TraitSpec)
 
@@ -4491,6 +4493,11 @@ instance Show TypeRepresentation where
 instance Show TypeFamily where
   show IntFamily   = "integer/address type"
   show FloatFamily = "floating point type"
+
+
+instance Show TraitImplSpec where
+  show (TraitImplSpec implTrait implType) =
+    show implType ++ " <: " ++ show implTrait
 
 
 -- |How to show a ModSpec.

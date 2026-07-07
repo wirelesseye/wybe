@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_default.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_default_silent.greet#adapter<0>], vtableExternal = True, vtableSpec = VTableSpec {vtableTrait = trait_default_greeter, vtableImplType = trait_default_silent}, vtableMod = ["trait_default_silent"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_default_silent.greet#adapter<0>], vtableExternal = True, vtableSpec = trait_default_silent <: trait_default_greeter, vtableMod = ["trait_default_silent"]}
   imports         : use trait_default_greeter
                     use trait_default_silent
                     use wybe
@@ -21,7 +21,7 @@ module top-level code > public {semipure} (0 calls)
   AliasPairs: []
   InterestingCallProperties: []
   MultiSpeczDepInfo: [(3,(wybe.string.print<0>,fromList [NonAliasedParamCond 0 []]))]
-    vtable(global,VTableSpec {vtableTrait = trait_default_greeter, vtableImplType = trait_default_silent}):opaque@0(0:trait_default_silent, ?tmp#0##0:wybe.string) #0 @trait_default:nn:nn
+    vtable(global,trait_default_silent <: trait_default_greeter):opaque@0(0:trait_default_silent, ?tmp#0##0:wybe.string) #0 @trait_default:nn:nn
     wybe.string.print<0>[410bae77d3](~tmp#0##0:wybe.string)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}> #3 @trait_default:nn:nn
     foreign lpvm load(<<wybe.io.io>>:wybe.phantom, ?%tmp#5##0:wybe.phantom) @trait_default:nn:nn
     foreign c putchar(10:wybe.char, ~tmp#5##0:wybe.phantom, ?tmp#6##0:wybe.phantom) @trait_default:nn:nn
@@ -125,7 +125,7 @@ define external fastcc i64 @"trait_default_greeter#.greet<1>"() {
   public procs    : trait_default_silent.=<0>
                     trait_default_silent.trait_default_silent<0>
                     trait_default_silent.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_default_silent.greet#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_default_greeter, vtableImplType = trait_default_silent}, vtableMod = ["trait_default_silent"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_default_silent.greet#adapter<0>], vtableExternal = False, vtableSpec = trait_default_silent <: trait_default_greeter, vtableMod = ["trait_default_silent"]}
   imports         : use trait_default_greeter
                     use wybe
   resources       : 

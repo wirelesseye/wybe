@@ -170,7 +170,7 @@ normaliseItem item@(TraitImpl typ trait pos) = do
     let typ' = fromMaybe (TypeSpec [] currentModuleAlias []) typ
     when (genericType typ') $
         nyi "generic trait implementations"
-    addTraitImpl pos (VTableSpec trait typ') Nothing
+    addTraitImpl pos (TraitImplSpec trait typ') Nothing
 normaliseItem (PragmaDecl prag) =
     addPragma prag
 
@@ -187,18 +187,18 @@ normaliseTraitImpls = do
     updateModInterface (\int -> int{ traitImpls=traitImpls })
 
 
--- |Resolve an unqualified vtable specification once its defining module is known.
-normaliseTraitImpl :: VTableSpec -> Placed (Maybe ModSpec) -> Compiler (VTableSpec, Placed (Maybe ModSpec))
-normaliseTraitImpl vspec@(VTableSpec trait typ) mod =
+-- |Resolve an unqualified trait impl specification once its defining module is known.
+normaliseTraitImpl :: TraitImplSpec -> Placed (Maybe ModSpec) -> Compiler (TraitImplSpec, Placed (Maybe ModSpec))
+normaliseTraitImpl ispec@(TraitImplSpec trait typ) mod =
     case content mod of
-        Just _ -> return (vspec, mod)
+        Just _ -> return (ispec, mod)
         Nothing -> do
             typ' <- lookupType "trait impl" Nothing typ
             trait' <- lookupType "trait impl" Nothing trait
             validTrait <- isTraitType trait'
             unless validTrait $ errmsg (place mod) $
                 "Invalid trait implementation: " ++ show trait' ++ " is not a trait"
-            return (VTableSpec trait' typ', mod)
+            return (TraitImplSpec trait' typ', mod)
 
 
 -- |Normalise a nested submodule containing the specified items.

@@ -410,9 +410,9 @@ data TypeError = ReasonMessage Message
                    -- are bounded to the current trait
                | ReasonNotATrait ProcName OptPos
                    -- ^Abstract proc defined in a non-trait module
-               | ReasonTraitImplMissing VTableSpec ProcName OptPos
+               | ReasonTraitImplMissing TraitImplSpec ProcName OptPos
                    -- ^Trait implementation lacks a matching concrete proc
-               | ReasonMultipleTraitImpl VTableSpec ProcName OptPos
+               | ReasonMultipleTraitImpl TraitImplSpec ProcName OptPos
                    -- ^Multiple concrete procs exist for a trait implementation
                deriving (Eq, Ord)
 
@@ -601,13 +601,13 @@ typeErrorMessage (ReasonNotATrait name pos) =
     Message Error pos $
         "Abstract procedure " ++ name
         ++ " defined in a non-trait module"
-typeErrorMessage (ReasonTraitImplMissing (VTableSpec trait typ) name pos) =
+typeErrorMessage (ReasonTraitImplMissing (TraitImplSpec trait typ) name pos) =
     Message Error pos $
         "Invalid implementation of trait " ++ show trait
         ++ " for type " ++ show typ
         ++ ": missing required "
         ++ showProcName name
-typeErrorMessage (ReasonMultipleTraitImpl (VTableSpec trait typ) name pos) =
+typeErrorMessage (ReasonMultipleTraitImpl (TraitImplSpec trait typ) name pos) =
     Message Error pos $
         "Invalid implementation of trait " ++ show trait
         ++ " for type " ++ show typ
@@ -1001,7 +1001,7 @@ mergeTypeVarBounds name ty1 ty2 = do
 unifyTypeVarBounds :: TypeError -> Set TraitSpec -> TypeSpec -> Typed TypeSpec
 unifyTypeVarBounds reason bounds ty = do
     knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
-    if all (\bound -> Map.member (VTableSpec bound ty) knownTraitImpls)
+    if all (\bound -> Map.member (TraitImplSpec bound ty) knownTraitImpls)
             (Set.toList bounds)
         then return ty
         else invalidTypeError reason
@@ -1178,53 +1178,53 @@ typecheckLocalTraitImpls thisMod = do
     return $ concatMap errList traitImplProcs
 
 
-typecheckLocalTraitImpl :: VTableSpec -> Placed (Maybe ModSpec)
-                        -> Compiler (MaybeErr (VTableSpec, [ProcSpec]))
-typecheckLocalTraitImpl vspec@(VTableSpec trait _) traitImpl = do
+typecheckLocalTraitImpl :: TraitImplSpec -> Placed (Maybe ModSpec)
+                        -> Compiler (MaybeErr (TraitImplSpec, [ProcSpec]))
+typecheckLocalTraitImpl ispec@(TraitImplSpec trait _) traitImpl = do
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
     let pos = place traitImpl
     absProcs <- abstractProcs trait
-    matched <- mapM (uncurry (typecheckTraitImplProc pos vspec)) absProcs
+    matched <- mapM (uncurry (typecheckTraitImplProc pos ispec)) absProcs
     let errs = concatMap errList matched
     return $ if List.null errs
-        then OK (vspec, catOKs matched)
+        then OK (ispec, catOKs matched)
         else Err errs
 
 
-typecheckTraitImplProc :: OptPos -> VTableSpec -> ProcSpec -> ProcDef -> Compiler (MaybeErr ProcSpec)
-typecheckTraitImplProc pos vspec absProcSpec absProcDef = do
+typecheckTraitImplProc :: OptPos -> TraitImplSpec -> ProcSpec -> ProcDef -> Compiler (MaybeErr ProcSpec)
+typecheckTraitImplProc pos ispec absProcSpec absProcDef = do
     thisMod <- getModuleSpec
     knownProcs <- getModuleImplementationField modKnownProcs
     let name = procName absProcDef
         procSpecs = Set.toList $ Map.findWithDefault Set.empty name knownProcs
     implProcSpecs <- filterM (fmap (isNothing . procAbstract) . getProcDef) procSpecs
-    matches <- catOKs <$> mapM (matchTraitImplProc vspec absProcSpec absProcDef) implProcSpecs
+    matches <- catOKs <$> mapM (matchTraitImplProc ispec absProcSpec absProcDef) implProcSpecs
     let preferredMatches = List.filter ((== thisMod) . procSpecMod) matches
         matches' = if List.null preferredMatches then matches else preferredMatches
     return $ case matches' of
         [match] -> OK match
-        []      -> Err [ReasonTraitImplMissing vspec name pos]
-        _       -> Err [ReasonMultipleTraitImpl vspec name pos]
+        []      -> Err [ReasonTraitImplMissing ispec name pos]
+        _       -> Err [ReasonMultipleTraitImpl ispec name pos]
 
 
-matchTraitImplProc :: VTableSpec -> ProcSpec -> ProcDef -> ProcSpec
+matchTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
                      -> Compiler (MaybeErr ProcSpec)
-matchTraitImplProc vspec@(VTableSpec trait _) absProcSpec absProcDef implProcSpec = do
+matchTraitImplProc ispec@(TraitImplSpec trait _) absProcSpec absProcDef implProcSpec = do
     implProcDef <- getProcDef implProcSpec
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
         pos = procPos absProcDef
-        absProcDef' = absProcDef { procProto = traitImplProcProto vspec absProcDef }
-    (result, _) <- runStateT (matchTraitImplProc' vspec absProcSpec absProcDef' implProcSpec implProcDef)
+        absProcDef' = absProcDef { procProto = traitImplProcProto ispec absProcDef }
+    (result, _) <- runStateT (matchTraitImplProc' ispec absProcSpec absProcDef' implProcSpec implProcDef)
         $ initTyping absProcDef' traitMod
 
     return $ case result of
         OK _ -> OK implProcSpec
-        Err _ -> Err [ReasonTraitImplMissing vspec (procName absProcDef) pos]
+        Err _ -> Err [ReasonTraitImplMissing ispec (procName absProcDef) pos]
 
 
-matchTraitImplProc' :: VTableSpec -> ProcSpec -> ProcDef -> ProcSpec
+matchTraitImplProc' :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
                     -> ProcDef -> Typed (MaybeErr (CallInfo, Typing))
-matchTraitImplProc' vspec absProcSpec absProcDef implProcSpec implProcDef = do
+matchTraitImplProc' ispec absProcSpec absProcDef implProcSpec implProcDef = do
     absInfo <- firstInfo absProcDef absProcSpec
     implInfo <- firstInfo implProcDef implProcSpec
     let absInfo' = fromMaybe absInfo $ boolFnToTest absInfo
@@ -1236,7 +1236,7 @@ matchTraitImplProc' vspec absProcSpec absProcDef implProcSpec implProcDef = do
             (fiTypes absInfo) (fiFlows absInfo) implInfo
         else do
             logTyped $ "proc headers mismatched: \n" ++ show absInfo ++ "\n" ++ show implInfo
-            return $ Err [ReasonTraitImplMissing vspec (procName absProcDef) pos]
+            return $ Err [ReasonTraitImplMissing ispec (procName absProcDef) pos]
 
 
 matchTraitImplHeaders :: CallInfo -> CallInfo -> Bool
@@ -1249,8 +1249,8 @@ matchTraitImplHeaders absInfo implInfo =
     && fiPartial absInfo == fiPartial implInfo
 
 
-traitImplProcProto :: VTableSpec -> ProcDef -> ProcProto
-traitImplProcProto vspec@(VTableSpec trait implTy) absProcDef = do
+traitImplProcProto :: TraitImplSpec -> ProcDef -> ProcProto
+traitImplProcProto ispec@(TraitImplSpec trait implTy) absProcDef = do
     let proto = procProto absProcDef
         bounds = Map.fromListWith Set.union
             [(name, Set.singleton bound) | (name, bound) <- procBoundedTypeParams absProcDef]
@@ -2650,7 +2650,7 @@ matchProcSignatures left right =
 
 
 -- |Return true if the first type accepts every value accepted by the second
-moreGeneral :: Map VTableSpec (Placed (Maybe ModSpec))
+moreGeneral :: Map TraitImplSpec (Placed (Maybe ModSpec))
                 -> TypeVarDict -> TypeVarDict -> TypeSpec -> TypeSpec -> Bool
 moreGeneral _ _ _ general specific
     | general == specific = True
@@ -2661,7 +2661,7 @@ moreGeneral traitImpls generalDict specificDict general@TypeVariable{} specific 
         specificVar@TypeVariable{} ->
             generalBounds `Set.isSubsetOf`
                 typeVarBoundsIn specificDict specificVar
-        _ -> all (\bound -> Map.member (VTableSpec bound specific) traitImpls)
+        _ -> all (\bound -> Map.member (TraitImplSpec bound specific) traitImpls)
             (Set.toList generalBounds)
 moreGeneral traitImpls generalDict specificDict
         (TypeSpec generalMod generalName generalParams)
@@ -2687,7 +2687,7 @@ moreGeneral _ _ _ _ _ = False
 
 -- |Return true if every param type in the first @CallInfo@ is strictly more general
 -- than that in the second @CallInfo@
-paramsMoreGeneral :: Map VTableSpec (Placed (Maybe ModSpec))
+paramsMoreGeneral :: Map TraitImplSpec (Placed (Maybe ModSpec))
                        -> (CallInfo, Typing) -> (CallInfo, Typing) -> Bool
 paramsMoreGeneral traitImpls general specific =
     let generalTypes = callInfoTypes $ fst general

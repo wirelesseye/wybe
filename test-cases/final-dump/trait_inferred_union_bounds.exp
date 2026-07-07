@@ -8,10 +8,10 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_inferred_union_bounds.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.<#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_inferred_union_bounds.comparable, vtableImplType = wybe.float}, vtableMod = ["trait_inferred_union_bounds"]}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.<#adapter<1>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_inferred_union_bounds.comparable, vtableImplType = wybe.int}, vtableMod = ["trait_inferred_union_bounds"]}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.println#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_inferred_union_bounds.printable, vtableImplType = wybe.float}, vtableMod = ["trait_inferred_union_bounds"]}
-                    3:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.println#adapter<1>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_inferred_union_bounds.printable, vtableImplType = wybe.int}, vtableMod = ["trait_inferred_union_bounds"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.<#adapter<0>], vtableExternal = False, vtableSpec = wybe.float <: trait_inferred_union_bounds.comparable, vtableMod = ["trait_inferred_union_bounds"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.<#adapter<1>], vtableExternal = False, vtableSpec = wybe.int <: trait_inferred_union_bounds.comparable, vtableMod = ["trait_inferred_union_bounds"]}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.println#adapter<0>], vtableExternal = False, vtableSpec = wybe.float <: trait_inferred_union_bounds.printable, vtableMod = ["trait_inferred_union_bounds"]}
+                    3:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_union_bounds.println#adapter<1>], vtableExternal = False, vtableSpec = wybe.int <: trait_inferred_union_bounds.printable, vtableMod = ["trait_inferred_union_bounds"]}
   imports         : use trait_inferred_union_bounds.comparable
                     use trait_inferred_union_bounds.printable
                     use wybe
@@ -24,8 +24,8 @@ module top-level code > public {semipure} (0 calls)
 ()<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
-    trait_inferred_union_bounds.print_larger<0>(3:wybe.int, 5:wybe.int, vtable(global,VTableSpec {vtableTrait = trait_inferred_union_bounds.comparable, vtableImplType = wybe.int}):opaque, vtable(global,VTableSpec {vtableTrait = trait_inferred_union_bounds.printable, vtableImplType = wybe.int}):opaque)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}> #0 @trait_inferred_union_bounds:nn:nn
-    trait_inferred_union_bounds.print_larger<0>(3.14:wybe.float, 1.0:wybe.float, vtable(global,VTableSpec {vtableTrait = trait_inferred_union_bounds.comparable, vtableImplType = wybe.float}):opaque, vtable(global,VTableSpec {vtableTrait = trait_inferred_union_bounds.printable, vtableImplType = wybe.float}):opaque)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}> #1 @trait_inferred_union_bounds:nn:nn
+    trait_inferred_union_bounds.print_larger<0>(3:wybe.int, 5:wybe.int, vtable(global,wybe.int <: trait_inferred_union_bounds.comparable):opaque, vtable(global,wybe.int <: trait_inferred_union_bounds.printable):opaque)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}> #0 @trait_inferred_union_bounds:nn:nn
+    trait_inferred_union_bounds.print_larger<0>(3.14:wybe.float, 1.0:wybe.float, vtable(global,wybe.float <: trait_inferred_union_bounds.comparable):opaque, vtable(global,wybe.float <: trait_inferred_union_bounds.printable):opaque)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}> #1 @trait_inferred_union_bounds:nn:nn
 
 
 proc <#adapter > {noinline} (0 calls)

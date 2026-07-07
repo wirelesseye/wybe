@@ -61,7 +61,7 @@ define external fastcc i64 @"trait_default_greeter#.greet<1>"() {
   public procs    : trait_default_silent.=<0>
                     trait_default_silent.trait_default_silent<0>
                     trait_default_silent.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_default_silent.greet#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_default_greeter, vtableImplType = trait_default_silent}, vtableMod = ["trait_default_silent"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_default_silent.greet#adapter<0>], vtableExternal = False, vtableSpec = trait_default_silent <: trait_default_greeter, vtableMod = ["trait_default_silent"]}
   imports         : use trait_default_greeter
                     use wybe
   resources       : 

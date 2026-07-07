@@ -2419,7 +2419,7 @@ llvmLabelName varName = "label %" ++ llvmQuoteIfNecessary varName
 
 -- | Make a suitable LLVM name for a vtable.
 llvmVTableName :: VTableSpec -> ModSpec -> String
-llvmVTableName (VTableSpec trait typ) mod = do
+llvmVTableName (TraitImplSpec trait typ) mod = do
     let trait' = mangleTypeSpec trait
     let typ' = mangleTypeSpec typ
     let mod' = mangleModSpec mod

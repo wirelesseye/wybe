@@ -10,7 +10,7 @@ AFTER EVERYTHING:
   public procs    : trait_implicit_equality.<0>
   constants       : 0:: CStringInfo {cstringChars = "different"}
                     1:: CStringInfo {cstringChars = "same"}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_implicit_equality_number.=#adapter<0>], vtableExternal = True, vtableSpec = VTableSpec {vtableTrait = trait_implicit_equality_equality, vtableImplType = trait_implicit_equality_number}, vtableMod = ["trait_implicit_equality_number"]}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_implicit_equality_number.=#adapter<0>], vtableExternal = True, vtableSpec = trait_implicit_equality_number <: trait_implicit_equality_equality, vtableMod = ["trait_implicit_equality_number"]}
                     3:: StructInfo {structSize = 16, structData = [IntStructMember 4 8,PointerStructMember c"same"]}
                     4:: StructInfo {structSize = 16, structData = [IntStructMember 9 8,PointerStructMember c"different"]}
   imports         : use trait_implicit_equality_equality
@@ -124,7 +124,7 @@ define external fastcc i1 @"trait_implicit_equality_equality#.=<0>"(i64 %"x##0",
                     trait_implicit_equality_number.value<0>
                     trait_implicit_equality_number.value<1>
                     trait_implicit_equality_number.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_implicit_equality_number.=#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_implicit_equality_equality, vtableImplType = trait_implicit_equality_number}, vtableMod = ["trait_implicit_equality_number"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_implicit_equality_number.=#adapter<0>], vtableExternal = False, vtableSpec = trait_implicit_equality_number <: trait_implicit_equality_equality, vtableMod = ["trait_implicit_equality_number"]}
   imports         : use trait_implicit_equality_equality
                     use wybe
   resources       : 

@@ -65,7 +65,7 @@ define external fastcc i64 @"trait_override_named#.describe<1>"() {
                     trait_override_person.trait_override_person<0>
                     trait_override_person.trait_override_person<1>
                     trait_override_person.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_override_named, vtableImplType = trait_override_person}, vtableMod = ["trait_override_person"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe#adapter<0>], vtableExternal = False, vtableSpec = trait_override_person <: trait_override_named, vtableMod = ["trait_override_person"]}
   imports         : use trait_override_named
                     use wybe
   resources       : 

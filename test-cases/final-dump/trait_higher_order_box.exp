@@ -14,7 +14,7 @@ AFTER EVERYTHING:
                     trait_higher_order_box.trait_higher_order_box<0>
                     trait_higher_order_box.trait_higher_order_box<1>
                     trait_higher_order_box.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_higher_order_box.apply_to_self#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_higher_order_mapper, vtableImplType = trait_higher_order_box}, vtableMod = ["trait_higher_order_box"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_higher_order_box.apply_to_self#adapter<0>], vtableExternal = False, vtableSpec = trait_higher_order_box <: trait_higher_order_mapper, vtableMod = ["trait_higher_order_box"]}
   imports         : use trait_higher_order_mapper
                     use wybe
   resources       : 

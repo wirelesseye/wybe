@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_submodule.<0>
   constants       : 0:: CStringInfo {cstringChars = "integer "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule.render#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_submodule.printable, vtableImplType = wybe.int}, vtableMod = ["trait_submodule"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule.render#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_submodule.printable, vtableMod = ["trait_submodule"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 8 8,PointerStructMember c"integer "]}
   imports         : use trait_submodule.printable
                     use wybe

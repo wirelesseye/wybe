@@ -395,7 +395,7 @@ compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
             let arg = primParamToArg param
             return $ ArgVTable (Right arg) (Representation CPointer)
         _ -> do
-            let vspec = VTableSpec paramVarBound argType
+            let vspec = TraitImplSpec paramVarBound argType
             return $ ArgVTable (Left vspec) (Representation CPointer)
 
 compileFlowArg :: FlowDirection -> Exp -> OptPos -> ClauseComp [PrimArg]
@@ -555,29 +555,29 @@ compileVTable vspec opmod = do
 -- implementation can have a different ABI from the corresponding abstract
 -- method because abstract type variables use defaultTypeRepresentation.  When
 -- that happens, store a generated adapter in the vtable instead.
-adaptTraitImplProcs :: VTableSpec -> [ProcSpec] -> Compiler [ProcSpec]
-adaptTraitImplProcs vspec@(VTableSpec trait typ) procSpecs = do
+adaptTraitImplProcs :: TraitImplSpec -> [ProcSpec] -> Compiler [ProcSpec]
+adaptTraitImplProcs ispec@(TraitImplSpec trait typ) procSpecs = do
     absProcs <- List.map fst <$> abstractProcs trait
     unless (sameLength absProcs procSpecs) $
-        shouldnt $ "vtable proc count mismatch for " ++ show vspec
+        shouldnt $ "vtable proc count mismatch for " ++ show ispec
             ++ ": abstract procs " ++ show absProcs
             ++ ", implementation procs " ++ show procSpecs
-    zipWithM (adaptTraitImplProc vspec) absProcs procSpecs
+    zipWithM (adaptTraitImplProc ispec) absProcs procSpecs
 
 
-adaptTraitImplProc :: VTableSpec -> ProcSpec -> ProcSpec -> Compiler ProcSpec
-adaptTraitImplProc vspec absProcSpec implProcSpec = do
+adaptTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcSpec -> Compiler ProcSpec
+adaptTraitImplProc ispec absProcSpec implProcSpec = do
     absProcDef <- getProcDef absProcSpec
     implProcDef <- getProcDef implProcSpec
-    let adapterParams = vtableSlotParams vspec absProcDef
-    generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef
+    let adapterParams = vtableSlotParams ispec absProcDef
+    generateAdapter ispec absProcDef adapterParams implProcSpec implProcDef
 
 
 -- |The ABI used by a virtual call through a vtable slot.  This is the abstract
 -- method's primitive parameters, except that the dispatching vtable parameter
 -- itself is supplied by the loaded vtable and is not passed to the target proc.
 vtableSlotParams :: VTableSpec -> ProcDef -> [PrimParam]
-vtableSlotParams (VTableSpec trait _) absProcDef =
+vtableSlotParams (TraitImplSpec trait _) absProcDef =
     procOrdinaryABIParams absProcDef
         ++ vtableParamsFor (forwardedVTableBounds trait absProcDef)
 
@@ -710,7 +710,7 @@ adapterArgBridge idx adapterParam implParam
 
 
 adapterVTableArgs :: VTableSpec -> ProcDef -> ProcDef -> [PrimParam] -> [PrimArg]
-adapterVTableArgs vspec@(VTableSpec trait _) absProcDef implProcDef adapterParams =
+adapterVTableArgs vspec@(TraitImplSpec trait _) absProcDef implProcDef adapterParams =
     snd $ List.mapAccumL vtableArg forwardedParams (procBoundedTypeParams implProcDef)
   where
     dispatchTraitMod = typeModule trait

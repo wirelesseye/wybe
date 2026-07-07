@@ -15,7 +15,7 @@ AFTER EVERYTHING:
                     trait_basic_dog.trait_basic_dog<1>
                     trait_basic_dog.~=<0>
   constants       : 0:: CStringInfo {cstringChars = " says woof"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_basic_dog.speak#adapter<0>], vtableExternal = False, vtableSpec = VTableSpec {vtableTrait = trait_basic_speaker, vtableImplType = trait_basic_dog}, vtableMod = ["trait_basic_dog"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_basic_dog.speak#adapter<0>], vtableExternal = False, vtableSpec = trait_basic_dog <: trait_basic_speaker, vtableMod = ["trait_basic_dog"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 10 8,PointerStructMember c" says woof"]}
   imports         : use trait_basic_speaker
                     use wybe
