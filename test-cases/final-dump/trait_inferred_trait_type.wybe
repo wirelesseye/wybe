@@ -1,3 +1,5 @@
+# Verify private procedures infer the trait bounds of untyped parameters.
+
 type my_trait trait {
     abstract my_method(x:_): _
 }

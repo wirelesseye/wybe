@@ -1,3 +1,6 @@
+# Verify trait adapters bridge generic type values to values
+# of different type representations (float in this test).
+
 type my_trait trait {
     abstract my_method(x:_): _
 }

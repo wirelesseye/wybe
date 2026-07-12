@@ -1,3 +1,5 @@
+# Verify trait adapters support methods whose implementing type is output-only.
+
 type from_string trait {
     abstract from_string(x:string): _
 }

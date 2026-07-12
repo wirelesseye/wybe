@@ -1,3 +1,5 @@
+# Verify a trait implementation reports a missing required method.
+
 module required_method {
     trait
 

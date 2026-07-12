@@ -1,3 +1,5 @@
+# Verify trait implementations can distinguish concrete type arguments.
+
 type printable trait {
     abstract render(x:_): string
 }

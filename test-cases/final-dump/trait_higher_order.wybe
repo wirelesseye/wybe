@@ -1,3 +1,5 @@
+# Verify higher-order trait methods preserve their bounded argument type.
+
 use trait_higher_order_mapper, trait_higher_order_box
 
 def describe_box(x:trait_higher_order_box): string = "box: $(x^name)"

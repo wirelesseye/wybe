@@ -1,3 +1,5 @@
+# Verify trait dispatch and combined bounds across imported trait modules.
+
 use trait_basic_speaker, trait_basic_named, trait_basic_dog
 
 def speak_through_trait(x:trait_basic_speaker): string = speak(x)

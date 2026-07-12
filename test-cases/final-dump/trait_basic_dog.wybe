@@ -1,3 +1,5 @@
+# Provide a concrete dog implementation for the basic trait dispatch test.
+
 use trait_basic_speaker
 
 impl trait_basic_speaker

@@ -1,3 +1,5 @@
+# Verify a locally declared trait submodule.
+
 type printable trait {
     abstract render(x:T<:_): string
 }

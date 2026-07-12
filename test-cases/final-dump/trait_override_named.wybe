@@ -1,3 +1,5 @@
+# Define a `named` trait with a default description method.
+
 trait
 
 abstract describe(x:_): string

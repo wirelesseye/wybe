@@ -1,3 +1,5 @@
+# Verify trait dispatch rejects a type without the required implementation.
+
 module greeter {
     trait
 

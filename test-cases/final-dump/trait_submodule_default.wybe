@@ -1,3 +1,5 @@
+# Verify a local trait submodule can provide a default method.
+
 type greeter trait {
     abstract greet(x:T<:_): string
 

@@ -1,3 +1,5 @@
+# Define a greeter trait with a default method implementation.
+
 trait
 
 abstract greet(x:T<:_): string

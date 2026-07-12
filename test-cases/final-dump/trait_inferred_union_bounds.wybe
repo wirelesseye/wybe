@@ -1,3 +1,5 @@
+# Verify parameter type inference combines multiple trait bounds.
+
 type printable trait {
     abstract println(x:_) use !io
 }

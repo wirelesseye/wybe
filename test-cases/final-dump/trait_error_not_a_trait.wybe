@@ -1,3 +1,5 @@
+# Verify abstract procedures must be defined in trait modules.
+
 module my_trait {
     trait
 }

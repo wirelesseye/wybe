@@ -1,3 +1,5 @@
+# Provide the concrete box implementation for higher-order trait dispatch.
+
 use trait_higher_order_mapper
 
 impl trait_higher_order_mapper

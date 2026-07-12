@@ -1,3 +1,5 @@
+# Verify methods can use multiple parameters constrained by trait types.
+
 type person trait {
     abstract person_name(x:_): string
 }

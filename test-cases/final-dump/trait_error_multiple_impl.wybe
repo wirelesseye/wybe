@@ -1,3 +1,5 @@
+# Verify a trait implementation reports multiple matching methods.
+
 module required_method {
     trait
 
