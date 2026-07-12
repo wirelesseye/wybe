@@ -1613,70 +1613,108 @@ type.
 
 ## <a name="traits"></a>Traits
 
-A *trait* specifies operations that a type must provide.  It lets a procedure
-work with any type that has the required operations, while retaining static type
-checking.  Trait calls are dispatched to the implementation for the concrete
-type supplied by the caller.
+A *trait* specifies procedures or functions that a type must provide.  It lets a
+procedure work with any type that has the required procedures/functions, while
+retaining static type checking.  Trait calls are dispatched to the implementation
+for the concrete type supplied by the caller.
 
 A module becomes a trait by containing a `trait` declaration.  A trait cannot
-also declare a representation or constructors.  Its required operations are
-declared with `abstract`:
+also declare a representation or constructors.  Its required procedures/functions
+are declared with `abstract`:
 
 ```
-# speaker.wybe
+# formattable.wybe
 trait
 
-abstract speak(x:_): string
+abstract fmt(x:_): string
 ```
 
 As a convenience, a trait submodule can be declared with a `type` declaration:
 
 ```
-type speaker trait {
-    abstract speak(x:_): string
+type formattable trait {
+    abstract fmt(x:_): string
 }
 ```
 
-This is equivalent to declaring a submodule named `speaker` whose first item is
-`trait`.
+This is equivalent to declaring a submodule named `formattable` whose first item
+is `trait`.
 
 An abstract procedure or function declaration has the same prototype syntax as
 a procedure or function declaration, but no body.  It must be in a trait module,
-and it must have exactly one type parameter constrained by that trait.  In the
-example above, `_` is an alias for the current trait, so the abstract function
-could instead be written as:
+and it must have exactly one type parameter constrained by that trait:
 
 ```
-abstract speak(x:speaker): string
+type formattable trait {
+    abstract fmt(x:T<:formattable): string
+}
 ```
 
-Using a trait directly as a parameter type is a shorthand for a type variable
-constrained to that trait.  Writing the constraint explicitly is useful when
-there is more than one parameter with the trait bound. 
+The `T<:formattable` notation means that `T` may be any type that implements the 
+trait `formattable`. Using a trait directly as a parameter type is a shorthand
+for a type variable constrained to that trait.  Therefore, the parameter type
+`T<:formattable` can be written as `formattable`.  Furthermore, since we have
+the `_` type, which is an alias for the type defined in the current module, the
+abstract function in the example above can be written as:
 
 ```
-abstract speak(x:_, y:_): string
-
-# is equivalent to:
-
-abstract speak(x:T<:speaker, y:T): string
-
+abstract fmt(x:_): string
 ```
 
-The `T<:_` notation means that `T` may be any type that implements the current
-trait.  More generally, a type variable in a regular procedure or function can
+More generally, a type variable in a regular procedure or function can
 be constrained by a named trait:
 
 ```
-def speak_twice(x:T<:speaker): string = "$(speak(x)) $(speak(x))"
+# In another module that is not `formattable`:
+def fmt_println(x:T<:formattable) use !io {
+    !println(fmt(x))
+}
 ```
 
-Trait constraints can be combined.  Here `T` must implement both `speaker` and
-`named`:
+Similarly, this can be written as:
 
 ```
-def describe_speaker(x:T<:{speaker, named}): string = describe(x)
+def fmt_println(x:formattable) use !io {
+    !println(fmt(x))
+}
 ```
+
+Trait constraints can be combined.  Here `T` must implement both `formattable`
+and `named`:
+
+```
+type named trait {
+    abstract name(x:_): string
+}
+
+def describe(x:T<:{formattable, named}): string =
+    "$(name(x)): $(fmt(x))"
+```
+
+Writing the constraint explicitly is useful when
+there is more than one parameter with the trait bound. 
+
+```
+def combine(x:formattable, y:formattable): string =
+    "$(fmt(x)), $(fmt(y))"
+
+# is equivalent to:
+
+def combine(x:T<:formattable, y:T): string =
+    "$(fmt(x)), $(fmt(y))"
+```
+
+Here `x` and `y` are given the same trait type, which implicitly specifies that
+both parameters must have the same concrete type.  If it is desired to have two
+or more parameters constrained to implement the current trait, but not 
+necessarily to have the same type, they must be written with the `<:` syntax,
+and specify different type variables:
+
+```
+def combine2(x:T<:formattable, y:T2<:formattable): string =
+    "$(fmt(x)), $(fmt(y))"
+```
+
 
 ### Implementing a trait
 
@@ -1684,69 +1722,108 @@ Declare that the type defined by the current module implements a trait with:
 
 > `impl` *trait*
 
-For example, a `dog` type can implement `speaker` as follows:
+For example, a `dog` type can implement `formattable` as follows:
 
 ```
 # dog.wybe
-use speaker
+use formattable
 
-impl speaker
+impl formattable
 
 pub constructor dog(name:string)
 
-pub def speak(x:_): string = "$(x^name) says woof"
+pub def fmt(x:_): string = "Dog($(x^name))"
 ```
 
-Each abstract procedure or function in `speaker` must have exactly one matching
-concrete procedure or function for `dog`.  Its parameter flows, argument and
-result types, determinism, purity, and resource use must match the abstract
-declaration.
+Each abstract procedure or function in the trait module must have exactly one
+concrete (non-abstract) procedure or function that matches the signature of the
+abstract procedure/function, except that it has a parameter of the concrete type
+wherever the abstract procedure/function has the trait type (or type variable
+with the trait as type bound).  The parameter flows, argument and
+result types, determinism, purity, and resource use of the concrete
+procedure/function must match the abstract declaration.
 
 An implementation for another type may be declared in any module with:
 
 > `impl` *type* `<:` *trait*
 
+To declare that a type implements multiple traits at once, enclose a
+comma-separated list of traits in braces:
+
+> `impl` *type* `<:` `{`*trait*`,` *trait*`, ...}`
+
+For example:
+
+```
+impl int <: {formattable, eq}
+```
+
+The braced form can also be used when implementing multiple traits for the type
+defined by the current module:
+
+```
+impl {formattable, eq}
+```
+
 For example, this makes `int` implement a trait declared in a submodule:
 
 ```
-type printable trait {
-    abstract render(x:T<:_): string
+type formattable trait {
+    abstract fmt(x:_): string
 }
 
-impl int <: printable
+impl int <: formattable
 
-def render(x:int): string = "integer $x"
+def fmt(x:int): string = "$x"
 ```
 
 The implementation procedures are resolved in the module containing the
-`impl` declaration.  If there are matching procedures imported from elsewhere,
-the local matching procedure is preferred.
+`impl` declaration, and they can come from imported modules.  If multiple
+matching procedures exist, one is defined locally and others are imported from
+elsewhere, then the local matching procedure is preferred.
 
 ### Default trait implementations
 
 A trait may give an abstract procedure or function a default implementation by
-declaring a concrete procedure or function in the trait module with the same
-signature.  Types implementing the trait use that default unless their
-implementation module supplies its own matching operation:
+declaring a public concrete procedure or function in the trait module with the
+same signature.  Types implementing the trait use that default unless their
+implementation module supplies its own matching procedure/function. 
+
+For example, the formattable trait can provide a generic default for fmt:
 
 ```
-# greeter.wybe
+# formattable.wybe
 trait
 
-abstract greet(x:T<:_): string
+abstract fmt(x:_): string
 
-pub def greet(x:_): string = "default greeting"
-
-# silent.wybe
-use greeter
-
-constructor silent(x:int)
-impl greeter
+pub def fmt(x:_): string = "<value>"
 ```
 
-Here `greet(silent(42))` returns `"default greeting"`.  A concrete implementation
-in `silent` named `greet` with the matching signature overrides the default.
+The existing dog type provides its own implementation, which overrides the
+default:
 
+```
+# dog.wybe
+
+use formattable
+
+impl formattable
+
+pub constructor dog(name:string)
+
+pub def fmt(x:_): string = "Dog($(x^name))"
+```
+
+Another existing type can implement the trait without defining `fmt`:
+
+```
+impl int <: formattable
+```
+
+Consequently, `fmt(dog("Fido"))` returns "Dog(Fido)", using the implementation
+defined for `dog`, while `fmt(42)` returns "\<value\>", using the default
+implementation from `formattable`.
 
 ## <a name="resources"></a>Resources
 
