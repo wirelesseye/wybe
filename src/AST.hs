@@ -218,7 +218,7 @@ data Item
      | ForeignProcDecl Visibility Ident ProcModifiers (Maybe Ident) ProcProto TypeSpec OptPos
      | AbstractProcDecl ProcModifiers ProcProto TypeSpec OptPos
      | StmtDecl Stmt OptPos
-     | TraitImpl (Maybe TypeSpec) TraitSpec OptPos
+     | TraitImpl (Maybe TypeSpec) [TraitSpec] OptPos
      | PragmaDecl Pragma
      deriving (Generic, Eq)
 
@@ -4495,10 +4495,12 @@ instance Show Item where
     ++ showOptPos pos
   show (StmtDecl stmt pos) =
     showStmt 4 stmt ++ showOptPos pos
-  show (TraitImpl typ trait pos) =
+  show (TraitImpl typ traits pos) =
     "impl "
     ++ maybeShow "" typ " <: "
-    ++ show trait
+    ++ case traits of
+        [trait] -> show trait
+        _ -> bracketList "{" "}" ", " (List.map show traits)
     ++ showOptPos pos
   show (PragmaDecl prag) =
     "pragma " ++ show prag

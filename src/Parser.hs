@@ -118,8 +118,9 @@ implItem = do
             symbol "<:"
             pure typ'
         )
-    trait <- typeSpec
-    return $ TraitImpl typ trait $ Just keypos
+    traits <- betweenB Brace (typeSpec `sepBy1` comma)
+        <|> pure <$> typeSpec
+    return $ TraitImpl typ traits $ Just keypos
 
 
 -- TODO:  Should use the Term parser to parse the declaration body.

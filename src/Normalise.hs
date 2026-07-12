@@ -164,13 +164,13 @@ normaliseItem item@ProcDecl{} = do
 normaliseItem (StmtDecl stmt pos) = do
     logNormalise $ "Normalising statement decl " ++ show stmt
     updateModule (\s -> s { stmtDecls = maybePlace stmt pos : stmtDecls s})
-normaliseItem item@(TraitImpl typ trait pos) = do
+normaliseItem item@(TraitImpl typ traits pos) = do
     mspec <- getModuleSpec
     params <- getModule modParams
     let typ' = fromMaybe (TypeSpec [] currentModuleAlias []) typ
     when (genericType typ') $
         nyi "generic trait implementations"
-    addTraitImpl pos (TraitImplSpec trait typ') Nothing
+    mapM_ (\trait -> addTraitImpl pos (TraitImplSpec trait typ') Nothing) traits
 normaliseItem (PragmaDecl prag) =
     addPragma prag
 
