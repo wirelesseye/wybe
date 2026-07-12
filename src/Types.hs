@@ -164,7 +164,7 @@ checkDeclIfPublic pname ppos public ty =
                         " with undeclared parameter or return type") ppos
 
 
-getBoundedTypeParams :: [Placed Param] -> [BoundedTypeVar]
+getBoundedTypeParams :: [Placed Param] -> [TypeVarBound]
 getBoundedTypeParams params = concatMap boundedParams typeVarNames
   where
     paramTypes = paramType . content <$> params
@@ -2265,7 +2265,7 @@ canonicaliseSingle tvarDict state ctr ty@HigherOrderType{higherTypeParams=tfs} =
 canonicaliseSingle _ state ctr ty = (ty, ctr, state)
 
 
-typeVarBoundDict :: [BoundedTypeVar] -> TypeVarDict
+typeVarBoundDict :: [TypeVarBound] -> TypeVarDict
 typeVarBoundDict = Map.fromListWith mergeBounds . List.map toBound
   where
     toBound (name, bound) = (name, Right $ Set.singleton bound)

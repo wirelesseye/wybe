@@ -57,7 +57,7 @@ data ClauseCompState = ClauseCompState {
         currVars       :: Numbering,   -- ^current var number for each var
         nextVars       :: Numbering,   -- ^var numbers after current stmt
         nextCallSiteID :: CallSiteID,  -- ^The next callSiteID to use
-        vTableParamDict :: Map BoundedTypeVar PrimParam,
+        vTableParamDict :: Map TypeVarBound PrimParam,
                                        -- ^compiled vtable params
         clauseImpurity :: Impurity    -- ^Impurity of the enclosing proc
         }
@@ -383,7 +383,7 @@ getTypeVarMap' HigherOrderType{higherTypeParams=formals}
 getTypeVarMap' _ _ = Map.empty
 
 
-compileVTableArg :: Map TypeVarName TypeSpec -> BoundedTypeVar -> ClauseComp PrimArg
+compileVTableArg :: Map TypeVarName TypeSpec -> TypeVarBound -> ClauseComp PrimArg
 compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
     let argType = trustFromJust "compileVTableArg" $ Map.lookup paramVarName typeVarMap
     case argType of
@@ -513,7 +513,7 @@ vtableParam index =
             FlowIn VTable (ParamInfo False emptyGlobalFlows)
 
 
-vtableParamsFor :: [BoundedTypeVar] -> [PrimParam]
+vtableParamsFor :: [TypeVarBound] -> [PrimParam]
 vtableParamsFor bounds =
     [vtableParam i | (i, _) <- zip [0..] bounds]
 
@@ -544,7 +544,7 @@ compileVTable vspec opmod = do
         values = List.map FnPointerStructMember procSpecs'
     case opmod of
         Just mod -> do
-            ancestor <- isAncestor thisMod mod
+            ancestor <- isAncestorMod thisMod mod
             if ancestor
                 then return Nothing -- Don't generate duplicated vtables in the same LLVM module
                 else Just <$> recordConstStruct (VTableInfo sz values True vspec mod) Nothing
@@ -582,7 +582,7 @@ vtableSlotParams (TraitImplSpec trait _) absProcDef =
         ++ vtableParamsFor (forwardedVTableBounds trait absProcDef)
 
 
-forwardedVTableBounds :: TraitSpec -> ProcDef -> [BoundedTypeVar]
+forwardedVTableBounds :: TraitSpec -> ProcDef -> [TypeVarBound]
 forwardedVTableBounds dispatchTrait absProcDef =
     [ bounded
     | bounded@(_, bound) <- procBoundedTypeParams absProcDef

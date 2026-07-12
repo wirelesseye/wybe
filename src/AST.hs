@@ -23,7 +23,7 @@ module AST (
   determinismSeq, determinismProceding, determinismName, determinismCanFail,
   impurityName, impuritySeq, expectedImpurity,
   inliningName,
-  TraitSpec, TraitImplSpec(..), VTableSpec, BoundedTypeVar,
+  TraitSpec, TraitImplSpec(..), VTableSpec, TypeVarBound,
   TypeProto(..), TypeModifiers(..), TypeSpec(..), typeVarSet, TypeVarName(..),
   genericType, higherOrderType, isHigherOrder,
   isResourcefulHigherOrder, isTraitType, typeModule,
@@ -109,7 +109,7 @@ module AST (
   optionallyPutStr, message, errmsg, warnmsg, (<!>), prettyPos,
   Message(..), queueMessage,
   genProcName, addImport, doImport, importFromSupermodule, publishTraitImpls,
-  isAncestor, lookupType, lookupType', typeIsUnique, 
+  isAncestorMod, lookupType, lookupType', typeIsUnique, 
   ResourceName, ResourceSpec(..), ResourceFlowSpec(..), PrimResourceImpln(..),
   initialisedResources, initialisedVisibleResources,
   addResource, lookupResourceSpec, lookupResource,
@@ -1844,9 +1844,11 @@ data ModuleImplementation = ModuleImplementation {
                                               -- ^Resources visible to this mod
     modKnownProcs:: Map Ident (Set ProcSpec), -- ^Procs visible to this module
     modKnownTraitImpls :: Map TraitImplSpec (Placed (Maybe ModSpec)),
-                                              -- ^Trait impls visible to this mod
-                                              -- and the mods where they are defined
-                                              -- `Nothing` if defined in the current mod
+      -- ^Trait impls visible to this module.  The `Placed` value always records
+      -- where the impl declaration was defined for error reporting.
+      -- `Maybe ModSpec` indicates whether the trait impl is external:
+      --   `Nothing` means the impl is defined in the current module (local)
+      --   `Just mod` means it is defined in another module (external)
     modTraitImplProcs :: Map TraitImplSpec [ProcSpec],
                                               -- Procs that satisfie trait impls
     modForeignObjects:: Set FilePath,         -- ^Foreign object files used
@@ -1989,6 +1991,9 @@ data ImportSpec = ImportSpec {
     } deriving (Show, Generic)
 
 
+-- |Indicate whether the import takes place after complete normalisation. 
+-- This is primarily used for importing trait implementations, which are only
+-- available after complete normalisation.
 data ImportPhase =
     BeforeCompleteNormalisation
   | AfterCompleteNormalisation
@@ -2117,13 +2122,14 @@ publishTraitImpls = do
     updateModInterface (\int -> int{ traitImpls=traitImpls })
 
 
--- |Check if the second module is an ancestor of the first module
-isAncestor :: ModSpec -> ModSpec -> Compiler Bool
-isAncestor mod ancestor = do
+-- |Check whether the second module is an ancestor module of the first:
+-- an ancestor directly or indirectly contains the first module as a nested submodule.
+isAncestorMod :: ModSpec -> ModSpec -> Compiler Bool
+isAncestorMod mod ancestor = do
     nestedIn <- getModuleImplementationField modNestedIn `inModule` mod
     case nestedIn of
         Just parent | parent == ancestor -> return True
-        Just parent -> isAncestor parent ancestor
+        Just parent -> isAncestorMod parent ancestor
         Nothing -> return False 
 
 
@@ -2271,7 +2277,7 @@ data ProcDef = ProcDef {
                                 -- variable in this proc. If a variable is not
                                 -- contained in the map, the flows are not
                                 -- known, and can be assumed to be universal
-    procBoundedTypeParams :: [BoundedTypeVar],
+    procBoundedTypeParams :: [TypeVarBound],
                                 -- ^The bounded type variables in the proc's params
                                 -- used for generating vtable params
     procFauxTypeVarCount :: Int
@@ -2697,10 +2703,14 @@ emptyProcAnalysis :: ProcAnalysis
 emptyProcAnalysis = ProcAnalysis emptyDS Set.empty Map.empty
 
 
+-- |Check if a procedure definition body is compiled. 
+-- Although an abstract procedure doesn't have a body, it is compiled to
+-- a virtual call through the vtable
 isCompiled :: ProcImpln -> Bool
 isCompiled ProcDefPrim {} = True
 isCompiled ProcDefSrc{} = False
 isCompiled ProcDefAbstract{} = False
+
 
 instance Show ProcImpln where
     show (ProcDefSrc stmts) = showBody 4 stmts
@@ -3758,9 +3768,10 @@ data PrimArg
      deriving (Eq,Ord,Generic)
 
 
--- |A trait specification.
+-- |A trait type specification.
 type TraitSpec = TypeSpec
 
+-- |Identifies an implementation of a trait for a type.
 data TraitImplSpec =
     TraitImplSpec {
         implTrait :: TraitSpec,                -- ^The implmentation trait spec
@@ -3768,9 +3779,11 @@ data TraitImplSpec =
     }
     deriving (Eq,Ord,Generic)
 
+-- |Identifies the vtable for a trait implementation.
 type VTableSpec = TraitImplSpec
 
-type BoundedTypeVar = (TypeVarName, TraitSpec)
+-- |A type variable together with the trait it is required to implement.
+type TypeVarBound = (TypeVarName, TraitSpec)
 
 -- | The contents of a constant memory block.
 data StructInfo
