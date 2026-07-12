@@ -1641,8 +1641,12 @@ This is equivalent to declaring a submodule named `formattable` whose first item
 is `trait`.
 
 An abstract procedure or function declaration has the same prototype syntax as
-a procedure or function declaration, but no body.  It must be in a trait module,
-and it must have exactly one type parameter constrained by that trait:
+an ordinary procedure or function declaration, but has no body.  It must appear
+inside a trait module and must identify exactly one type variable as the type
+that implements the enclosing trait. That type variable may occur in one or more
+parameters or in the result type.  The declaration may also use other type
+variables, provided they are not independently constrained by the enclosing
+trait.
 
 ```
 type formattable trait {
