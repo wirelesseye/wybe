@@ -1660,14 +1660,14 @@ llvmValue arg@(ArgClosure pspec args ty) = do
             logLLVM $ "Converting to representation " ++ show rep
             llvmValue readPtr
 llvmValue (ArgGlobal val _) = llvmGlobalInfoName val
-llvmValue (ArgVTable info _) = case info of
+llvmValue (ArgVTable info ty) = case info of
     Left vspec -> do
         knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
         let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup vspec knownTraitImpls
         thisMod <- lift getModuleSpec
         let mod = fromMaybe thisMod opmod
         return $ llvmGlobalName $ llvmVTableName vspec mod
-    Right val -> llvmValue val
+    Right var -> llvmValue $ ArgVar var ty FlowIn VTable False
 llvmValue (ArgConstRef structID ty) = do
     rep <- typeRep ty
     logLLVM $ "llvmValue of constant " ++ show structID

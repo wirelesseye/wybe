@@ -420,7 +420,7 @@ expandArg' arg@(ArgClosure ps as ty) = do
     return $ ArgClosure ps as' ty
 expandArg' arg@(ArgVTable info ty) = case info of
     Left spec -> return arg
-    Right val -> expandArg val
+    Right var -> expandArg $ ArgVar var ty FlowIn VTable False
 expandArg' arg = return arg
 
 

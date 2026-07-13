@@ -392,8 +392,8 @@ compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
             let boundedVarInProc = (argVarName, paramVarBound)
             let param = trustFromJust ("compileVTableArg for vtable: " ++ show boundedVarInProc) $
                     Map.lookup boundedVarInProc vTableParamDict
-            let arg = primParamToArg param
-            return $ ArgVTable (Right arg) (Representation CPointer)
+            return $ ArgVTable (Right $ primParamName param)
+                (Representation CPointer)
         _ -> do
             let vspec = TraitImplSpec paramVarBound argType
             return $ ArgVTable (Left vspec) (Representation CPointer)
@@ -724,7 +724,7 @@ adapterVTableArgs vspec@(TraitImplSpec trait _) absProcDef implProcDef adapterPa
         | typeModule bound == dispatchTraitMod =
             (params, ArgVTable (Left vspec) (Representation CPointer))
         | otherwise = case params of
-            param:rest -> (rest, ArgVTable (Right $ primParamToArg param)
+            param:rest -> (rest, ArgVTable (Right $ primParamName param)
                 (Representation CPointer))
             [] -> shouldnt $ "missing forwarded vtable parameter for bound " ++ show bound
 
