@@ -301,6 +301,15 @@ data MaybeErr t = OK t | Err [TypeError]
     deriving (Eq,Show)
 
 
+-- |A concrete, same-named procedure that was considered for a trait slot,
+-- together with the expected signature and any errors from type matching.
+data TraitImplMismatch = TraitImplMismatch {
+    traitImplExpected :: CallInfo,
+    traitImplActual   :: CallInfo,
+    traitImplErrors   :: [TypeError]
+} deriving (Eq, Ord)
+
+
 -- |Return a list of the errors in the supplied MaybeErr
 errList :: MaybeErr t -> [TypeError]
 errList (OK _) = []
@@ -410,7 +419,8 @@ data TypeError = ReasonMessage Message
                    -- are bounded to the current trait
                | ReasonNotATrait ProcName OptPos
                    -- ^Abstract proc defined in a non-trait module
-               | ReasonTraitImplMissing TraitImplSpec ProcName OptPos
+               | ReasonTraitImplMissing TraitImplSpec ProcName
+                   [TraitImplMismatch] OptPos
                    -- ^Trait implementation lacks a matching concrete proc
                | ReasonMultipleTraitImpl TraitImplSpec ProcName OptPos
                    -- ^Multiple concrete procs exist for a trait implementation
@@ -601,18 +611,80 @@ typeErrorMessage (ReasonNotATrait name pos) =
     Message Error pos $
         "Abstract procedure " ++ name
         ++ " defined in a non-trait module"
-typeErrorMessage (ReasonTraitImplMissing (TraitImplSpec trait typ) name pos) =
+typeErrorMessage (ReasonTraitImplMissing (TraitImplSpec trait typ) name mismatches pos) =
     Message Error pos $
         "Invalid implementation of trait " ++ show trait
         ++ " for type " ++ show typ
-        ++ ": missing required "
-        ++ showProcName name
+        ++ if List.null mismatches
+           then ": missing required " ++ showProcName name
+           else ": no matching implementation of " ++ showProcName name
+                ++ List.concatMap showTraitImplMismatch mismatches
 typeErrorMessage (ReasonMultipleTraitImpl (TraitImplSpec trait typ) name pos) =
     Message Error pos $
         "Invalid implementation of trait " ++ show trait
         ++ " for type " ++ show typ
         ++ ": multiple implementations of "
         ++ showProcName name
+
+
+-- |Explain why a same-named concrete procedure cannot implement an abstract
+-- procedure.  Header differences are detected before ordinary type matching,
+-- while the retained type errors cover less direct failures such as bounds.
+showTraitImplMismatch :: TraitImplMismatch -> String
+showTraitImplMismatch (TraitImplMismatch expected actual errs) =
+    "\n    candidate " ++ show actual ++ " does not match:"
+    ++ List.concatMap ("\n        " ++) reasons
+  where
+    differences = traitImplHeaderDifferences expected actual
+    fallbackReasons = nub $ messageText . typeErrorMessage <$> errs
+    reasons = if List.null differences then fallbackReasons else differences
+
+
+-- |Describe all directly observable differences between two first-order proc
+-- signatures.  Trait implementation matching only supplies FirstInfo values.
+traitImplHeaderDifferences :: CallInfo -> CallInfo -> [String]
+traitImplHeaderDifferences expected actual =
+    concat
+        [ difference (fiDetism actual) (fiDetism expected)
+            $ "determinism is " ++ determinismFullName (fiDetism actual)
+              ++ ", expected " ++ determinismFullName (fiDetism expected)
+        , difference (fiImpurity actual) (fiImpurity expected)
+            $ "purity is " ++ impurityFullName (fiImpurity actual)
+              ++ ", expected " ++ impurityFullName (fiImpurity expected)
+        , difference (fiInRes actual, fiOutRes actual)
+                     (fiInRes expected, fiOutRes expected)
+            $ "resources are " ++ showTraitImplResources actual
+              ++ ", expected " ++ showTraitImplResources expected
+        , difference (fiNeedsResBang actual) (fiNeedsResBang expected)
+            $ "resourcefulness " ++ isIsNot (fiNeedsResBang actual)
+              ++ " marked with !, but it " ++ isIsNot (fiNeedsResBang expected)
+              ++ " expected"
+        , difference (fiPartial actual) (fiPartial expected)
+            $ "partial application status differs"
+        , if length (fiTypes actual) == length (fiTypes expected)
+          then concat $ zipWith3 paramDifferences [1..]
+                    (zip (fiTypes actual) (fiFlows actual))
+                    (zip (fiTypes expected) (fiFlows expected))
+          else ["has " ++ show (length $ fiTypes actual) ++ " parameter(s), expected "
+                ++ show (length $ fiTypes expected)]
+        ]
+  where
+    difference actualValue expectedValue msg
+        | actualValue == expectedValue = []
+        | otherwise = [msg]
+    isIsNot True = "is"
+    isIsNot False = "is not"
+    showTraitImplResources info =
+        "inputs {" ++ intercalate ", " (show <$> Set.toList (fiInRes info))
+        ++ "}, outputs {"
+        ++ intercalate ", " (show <$> Set.toList (fiOutRes info)) ++ "}"
+    paramDifferences n (actualType, actualFlow) (expectedType, expectedFlow) =
+        difference actualType expectedType
+            ("parameter " ++ show n ++ " has type " ++ show actualType
+             ++ ", expected " ++ show expectedType)
+        ++ difference actualFlow expectedFlow
+            ("parameter " ++ show n ++ " has " ++ showFlowName actualFlow
+             ++ " flow, expected " ++ showFlowName expectedFlow)
 
 
 -- | Get the position from a type error
@@ -661,7 +733,7 @@ typeErrorPos (ReasonActuallyPure _ _ _ pos) = pos
 typeErrorPos (ReasonUnnreachable _ pos) = pos
 typeErrorPos (ReasonWrongTraitParam _ pos) = pos
 typeErrorPos (ReasonNotATrait _ pos) = pos
-typeErrorPos (ReasonTraitImplMissing _ _ pos) = pos
+typeErrorPos (ReasonTraitImplMissing _ _ _ pos) = pos
 typeErrorPos (ReasonMultipleTraitImpl _ _ pos) = pos
 
 
@@ -1198,51 +1270,55 @@ typecheckTraitImplProc pos ispec absProcSpec absProcDef = do
     let name = procName absProcDef
         procSpecs = Set.toList $ Map.findWithDefault Set.empty name knownProcs
     implProcSpecs <- filterM (fmap (isNothing . procAbstract) . getProcDef) procSpecs
-    matches <- catOKs <$> mapM (matchTraitImplProc ispec absProcSpec absProcDef) implProcSpecs
+    results <- mapM (matchTraitImplProc ispec absProcSpec absProcDef) implProcSpecs
+    let (mismatches, matches) = partitionEithers results
     let preferredMatches = List.filter ((== thisMod) . procSpecMod) matches
         matches' = if List.null preferredMatches then matches else preferredMatches
     return $ case matches' of
         [match] -> OK match
-        []      -> Err [ReasonTraitImplMissing ispec name pos]
+        []      -> Err [ReasonTraitImplMissing ispec name mismatches pos]
         _       -> Err [ReasonMultipleTraitImpl ispec name pos]
 
 
 matchTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
-                     -> Compiler (MaybeErr ProcSpec)
+                     -> Compiler (Either TraitImplMismatch ProcSpec)
 matchTraitImplProc ispec@(TraitImplSpec trait _) absProcSpec absProcDef implProcSpec = do
     implProcDef <- getProcDef implProcSpec
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
-        pos = procPos absProcDef
         absProcDef' = absProcDef { procProto = traitImplProcProto ispec absProcDef }
-    (result, _) <- runStateT (matchTraitImplProc' ispec absProcSpec absProcDef' implProcSpec implProcDef)
+    ((absInfo, implInfo, result), _) <- runStateT
+        (matchTraitImplProc' absProcSpec absProcDef' implProcSpec implProcDef)
         $ initTyping absProcDef' traitMod
 
     return $ case result of
-        OK _ -> OK implProcSpec
-        Err _ -> Err [ReasonTraitImplMissing ispec (procName absProcDef) pos]
+        OK _ -> Right implProcSpec
+        Err errs -> Left $ TraitImplMismatch absInfo implInfo errs
 
 
-matchTraitImplProc' :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
-                    -> ProcDef -> Typed (MaybeErr (CallInfo, Typing))
-matchTraitImplProc' ispec absProcSpec absProcDef implProcSpec implProcDef = do
+matchTraitImplProc' :: ProcSpec -> ProcDef -> ProcSpec -> ProcDef
+                    -> Typed (CallInfo, CallInfo,
+                              MaybeErr (CallInfo, Typing))
+matchTraitImplProc' absProcSpec absProcDef implProcSpec implProcDef = do
     absInfo <- firstInfo absProcDef absProcSpec
     implInfo <- firstInfo implProcDef implProcSpec
     let absInfo' = fromMaybe absInfo $ boolFnToTest absInfo
         implInfo' = fromMaybe implInfo $ boolFnToTest implInfo
     let pos = procPos absProcDef
         hasBang = fiNeedsResBang absInfo
-    if matchTraitImplHeaders absInfo' implInfo'
+    result <- if matchTraitImplHeaders absInfo' implInfo'
         then matchTypes (procName absProcDef) (procName implProcDef) pos hasBang
             (fiTypes absInfo) (fiFlows absInfo) implInfo
         else do
             logTyped $ "proc headers mismatched: \n" ++ show absInfo ++ "\n" ++ show implInfo
-            return $ Err [ReasonTraitImplMissing ispec (procName absProcDef) pos]
+            return $ Err []
+    return (absInfo', implInfo', result)
 
 
 matchTraitImplHeaders :: CallInfo -> CallInfo -> Bool
 matchTraitImplHeaders absInfo implInfo =
     fiDetism absInfo == fiDetism implInfo
     && fiImpurity absInfo == fiImpurity implInfo
+    && fiFlows absInfo == fiFlows implInfo
     && fiInRes absInfo == fiInRes implInfo
     && fiOutRes absInfo == fiOutRes implInfo
     && fiNeedsResBang absInfo == fiNeedsResBang implInfo
