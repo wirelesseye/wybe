@@ -1,4 +1,6 @@
 # Verify trait dispatch rejects a type without the required implementation.
+# The error message is wrong for now; the right error message shouldn't
+# include the partial application.
 
 module greeter {
     trait

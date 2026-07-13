@@ -1535,7 +1535,8 @@ data Module = Module {
   modIsType :: Bool,               -- ^Is this module a type, defined early
   modTypeRep :: Maybe TypeRepresentation, -- ^Type representation, when known
   modTypeSize :: Maybe Int,        -- ^The maximum size required to allocate an object of this type
-  modTrait :: Maybe (),            -- ^Is this module a trait, and its dependencies (placeholder)
+  modTrait :: Maybe (),            -- ^Is this module a trait;
+                                   --  The Maybe value is reserved for the trait dependency feature
   modInterface :: ModuleInterface, -- ^The public face of this module
   modInterfaceHash :: InterfaceHash,
                                    -- ^Hash of the "modInterface" above
