@@ -91,12 +91,36 @@ visibilityItem = do
 
 -- | Parse module-local items (with no visibility prefix).
 privateItem :: Parser Item
-privateItem = typeRepItem <|> pragmaItem
+privateItem = typeRepItem <|> traitItem <|> pragmaItem <|> abstractProcOrFuncItem <|> implItem
 
 
 -- | Parse a pragma item
 pragmaItem :: Parser Item
 pragmaItem = ident "pragma" *> (PragmaDecl <$> parsePragma)
+
+
+-- | Parse a 'abstract' procedure or function
+abstractProcOrFuncItem :: Parser Item
+abstractProcOrFuncItem = do
+    keypos <- tokenPosition <$> ident "abstract"
+    mods <- modifierList >>= parseWith (processProcModifiers keypos "abstract procedure or function declaration")
+    (proto, returnType) <- limitedTerm prototypePrecedence >>= parseWith termToPrototype
+    ress <- if returnType == AnyType then useResourceFlowSpecs else return []
+    return $ AbstractProcDecl mods proto { procProtoResources = ress } returnType $ Just keypos
+
+
+-- | Parse a trait 'impl' item
+implItem :: Parser Item
+implItem = do
+    keypos <- tokenPosition <$> ident "impl"
+    typ <- optionMaybe (try $ do
+            typ' <- limitedTerm implTypePrecedence >>= parseWith termToTypeSpec
+            symbol "<:"
+            pure typ'
+        )
+    traits <- betweenB Brace (typeSpec `sepBy1` comma)
+        <|> pure <$> typeSpec
+    return $ TraitImpl typ traits $ Just keypos
 
 
 -- TODO:  Should use the Term parser to parse the declaration body.
@@ -120,9 +144,23 @@ typeItem v = do
     pos <- tokenPosition <$> ident "type"
     modifiers <- List.foldl processTypeModifier defaultTypeModifiers
                  <$> modifierList
-    proto <- TypeProto <$> moduleName <*> typeVarNames
-    (imp, items) <- typeImpln <|> typeCtors
-    return $ TypeDecl v proto modifiers imp items (Just pos)
+    typeName <- moduleName
+    typeTraitItem v typeName modifiers pos <|> do
+        params <- typeVarNames
+        let proto = TypeProto typeName params
+        (imp, items) <- typeImpln <|> typeCtors
+        return $ TypeDecl v proto modifiers imp items (Just pos)
+
+
+-- | Type declaration shorthand for submodule traits.
+typeTraitItem :: Visibility -> Ident -> TypeModifiers -> SourcePos -> Parser Item
+typeTraitItem v typeName modifiers pos = do
+    keypos <- tokenPosition <$> ident "trait"
+    params <- typeVarNames
+    body <- betweenB Brace items
+    return $ ModuleDecl v typeName
+        (TraitDecl params modifiers (Just keypos) : body)
+        (Just pos)
 
 
 -- | Module type representation declaration
@@ -135,6 +173,16 @@ typeRepItem = do
                  <$> modifierList
     rep <- typeRep
     return $ RepresentationDecl params modifiers rep $ Just keypos
+
+
+-- | Module trait declaration
+traitItem :: Parser Item
+traitItem = do
+    keypos <- tokenPosition <$> ident "trait"
+    params <- typeVarNames
+    modifiers <- List.foldl processTypeModifier defaultTypeModifiers
+                 <$> modifierList
+    return $ TraitDecl params modifiers $ Just keypos
 
 
 -- | Module type representation declaration
@@ -657,6 +705,7 @@ data Associativity = LeftAssociative | NonAssociative | RightAssociative
 operatorAssociativity :: String -> (Int,Associativity)
 operatorAssociativity ":"  = (11, LeftAssociative)
 operatorAssociativity ":!" = (11, LeftAssociative)
+operatorAssociativity "<:"  = (11, RightAssociative)
 operatorAssociativity ","  = ( 0, RightAssociative)
 operatorAssociativity ";"  = (-1, RightAssociative)
 operatorAssociativity "\n" = (-1, RightAssociative)
@@ -709,6 +758,12 @@ lowestStmtSeqPrecedence = -4
 -- |Lowest (loosest) operator precedence of a proc/function prototype
 prototypePrecedence :: Int
 prototypePrecedence = 10
+
+
+-- |Lowest operator precedence for the implementation type in a trait impl.
+-- This excludes the following '<:' marker while still allowing type arguments.
+implTypePrecedence :: Int
+implTypePrecedence = 12
 
 
 -- |Prefix operator symbols; these all bind very tightly
@@ -1306,12 +1361,23 @@ termToTypeSpec (Embraced _ Paren args Nothing) =
     HigherOrderType defaultProcModifiers <$> mapM termToTypeFlow args
 termToTypeSpec (Call _ [] name ParamIn [])
   | isTypeVar name =
-    return $ TypeVariable $ RealTypeVar name
+    return $ TypeVariable (RealTypeVar name) Set.empty
+termToTypeSpec (Call _ [] "<:" ParamIn [Call _ [] name ParamIn [],bound])
+  | isTypeVar name = do
+    bounds <- termToTypeVarBounds bound
+    return $ TypeVariable (RealTypeVar name) bounds
 termToTypeSpec (Call _ mod name ParamIn params)
   | not $ isTypeVar name =
     TypeSpec mod name <$> mapM termToTypeSpec params
 termToTypeSpec other =
     syntaxError (termPos other) $ "invalid type specification " ++ show other
+
+
+termToTypeVarBounds :: TranslateTo (Set TraitSpec)
+termToTypeVarBounds (Embraced pos Brace bounds Nothing)
+  | List.null bounds = syntaxError pos "type variable bounds cannot be empty"
+  | otherwise = Set.fromList <$> mapM termToTypeSpec bounds
+termToTypeVarBounds bound = Set.singleton <$> termToTypeSpec bound
 
 termToTypeFlow :: TranslateTo TypeFlow
 termToTypeFlow (Call _ [] ":" _ [Call _ [] _ flow [],ty]) =
@@ -1359,7 +1425,7 @@ termToCtorField (Call pos [] ":" ParamIn [Call _ [] name ParamIn [],ty]) = do
     return $ Param name ty' ParamIn Ordinary `maybePlace` Just pos
 termToCtorField (Call pos [] name ParamIn [])
   | isTypeVar name = do
-    return $ Param "" (TypeVariable $ RealTypeVar name) ParamIn Ordinary
+    return $ Param "" (TypeVariable (RealTypeVar name) Set.empty) ParamIn Ordinary
                 `maybePlace` Just pos
 termToCtorField (Call pos mod name ParamIn params)
   | not $ isTypeVar name = do

@@ -695,6 +695,7 @@ mkInput arg@ArgFloat{} = arg
 mkInput arg@ArgClosure{} = arg
 mkInput (ArgUnneeded _ ty) = ArgUnneeded FlowIn ty
 mkInput arg@ArgGlobal{} = arg
+mkInput arg@ArgVTable{} = arg
 mkInput arg@ArgConstRef{} = arg
 mkInput arg@ArgUndef{} = arg
 
@@ -719,6 +720,10 @@ argExpandedPrim call@(PrimHigher id fn impurity args) = do
             logBuild $ "Leaving as higher call to " ++ show fn'
             args' <- mapM (expandArg True) args
             return $ PrimHigher id fn' impurity args'
+argExpandedPrim call@(PrimVirtualCall id table index impurity args gFlows) = do
+    table' <- expandArg True table
+    args' <- mapM (expandArg True) args
+    return $ PrimVirtualCall id table' index impurity args' gFlows
 argExpandedPrim (PrimForeign "lpvm" "mutate" flags (arg1:args)) = do
     arg1' <- expandArg False arg1 -- don't expand consts in the first argument
     args' <- mapM (expandArg True) args
@@ -938,6 +943,9 @@ canonicalisePrim (PrimCall _ nm impurity args gFlows) =
 canonicalisePrim (PrimHigher _ var impurity args) =
     PrimHigher 0 (canonicaliseArg $ mkInput var) impurity
                $ canonicaliseArg . mkInput <$> args
+canonicalisePrim (PrimVirtualCall _ table id impurity args gFlows) =
+    PrimVirtualCall 0 (canonicaliseArg $ mkInput table) id impurity
+               (canonicaliseArg . mkInput <$> args) gFlows
 canonicalisePrim (PrimForeign lang op flags args) =
     PrimForeign lang op flags $ List.map (canonicaliseArg . mkInput) args
 
@@ -952,6 +960,7 @@ canonicaliseArg (ArgClosure ms as _) =
 canonicaliseArg (ArgInt v _)        = ArgInt v AnyType
 canonicaliseArg (ArgFloat v _)      = ArgFloat v AnyType
 canonicaliseArg (ArgGlobal info _)  = ArgGlobal info AnyType
+canonicaliseArg arg@ArgVTable{}     = arg
 canonicaliseArg (ArgConstRef ms _)  = ArgConstRef ms AnyType
 canonicaliseArg (ArgUnneeded dir _) = ArgUnneeded dir AnyType
 canonicaliseArg (ArgUndef _)        = ArgUndef AnyType
@@ -960,6 +969,7 @@ canonicaliseArg (ArgUndef _)        = ArgUndef AnyType
 validateInstr :: Prim -> BodyBuilder ()
 validateInstr p@(PrimCall _ _ _ args _) = mapM_ (validateArg p) args
 validateInstr p@(PrimHigher _ fn _ args) = mapM_ (validateArg p) $ fn:args
+validateInstr p@(PrimVirtualCall _ table _ _ args _) = mapM_ (validateArg p) $ table:args
 validateInstr p@(PrimForeign _ _ _ args) = mapM_ (validateArg p) args
 
 
@@ -969,6 +979,7 @@ validateArg instr (ArgInt    _ ty)      = validateType ty instr
 validateArg instr (ArgFloat  _ ty)      = validateType ty instr
 validateArg instr (ArgClosure _ _ ty)   = validateType ty instr
 validateArg instr (ArgGlobal _ ty)      = validateType ty instr
+validateArg instr (ArgVTable _ ty)      = validateType ty instr
 validateArg instr (ArgConstRef _ ty)    = validateType ty instr
 validateArg instr (ArgUnneeded _ ty)    = validateType ty instr
 validateArg instr (ArgUndef ty)         = validateType ty instr
@@ -1152,6 +1163,14 @@ updateVariableFlows prim = do
                 _ -> Nothing)
             params args
         PrimHigher{} ->
+          return $ Map.fromList $ List.map
+              (\(ArgVar name ty _ _ _) ->
+                  (name, if isResourcefulHigherOrder ty
+                         then univGlobalFlows
+                         else if genericType ty
+                         then inFlows
+                         else emptyGlobalFlows)) outs
+        PrimVirtualCall{} ->
           return $ Map.fromList $ List.map
               (\(ArgVar name ty _ _ _) ->
                   (name, if isResourcefulHigherOrder ty

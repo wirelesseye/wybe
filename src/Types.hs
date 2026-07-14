@@ -44,6 +44,18 @@ import Data.Tuple.HT (mapSnd)
 ----------------------------------------------------------------
 
 
+type Validator = StateT ValidatorState Compiler
+
+data ValidatorState = ValidatorState {
+    valTraitTypeDict :: Map TraitSpec TypeSpec,
+                            -- ^ Generated type variables that look like
+                            -- `Type0<:comparable` for trait types like
+                            -- `comparable`.
+    valTypeVarCounter :: Int
+                            -- ^ For numbering type variables.
+}
+
+
 -- |Check declared types of exported procs for the specified module.
 -- This doesn't check that the types are correct vis-a-vis the
 -- definition, just that the declared types are valid types, and it
@@ -78,27 +90,109 @@ validateProcDefTypes name def = do
     let pos = procPos def
     let proto = procProto def
     let params = procProtoParams proto
+    let tvarCount = procFauxTypeVarCount def
     logTypes $ "Validating def of " ++ showProcName name
-    params' <- mapM (updatePlacedM $ validateParamType name pos public) params
-    return $ def { procProto = proto { procProtoParams = params' }}
+    (params', finalState) <- runStateT (traverse (updatePlacedM $ validateParam name pos public) params)
+                             $ ValidatorState Map.empty tvarCount
+    let boundedTypeParams = getBoundedTypeParams params'
+    return $ def { procProto = proto { procProtoParams = params' }
+                 , procFauxTypeVarCount = valTypeVarCounter finalState
+                 , procBoundedTypeParams = boundedTypeParams }
 
 
-validateParamType :: Ident -> OptPos -> Bool -> Param -> Compiler Param
-validateParamType pname ppos public param = do
+validateParam :: Ident -> OptPos -> Bool -> Param -> Validator Param
+validateParam pname ppos public param = do
     let ty = paramType param
     checkDeclIfPublic pname ppos public ty
-    logTypes $ "Checking type " ++ show ty ++ " of param " ++ show param
-    ty' <- lookupType "proc declaration" ppos ty
+    logValidator $ "Checking type " ++ show ty ++ " of param " ++ show param
+    ty' <- validateParamType ppos ty
     let param' = param { paramType = ty' }
-    logTypes $ "Param is " ++ show param'
+    logValidator $ "Param is " ++ show param'
     return param'
 
 
-checkDeclIfPublic :: Ident -> OptPos -> Bool -> TypeSpec -> Compiler ()
+validateParamType :: OptPos -> TypeSpec -> Validator TypeSpec
+validateParamType ppos ty = do
+    ty' <- lift $ lookupType "proc declaration" ppos ty
+    case ty' of
+        TypeSpec{typeParams=params} -> do
+            traitType <- lift $ isTraitType ty'
+            params' <- mapM (validateParamType ppos) params
+            let ty'' = ty'{typeParams=params'}
+            if traitType
+                then validateParamTraitType ty''
+                else return ty''
+        TypeVariable name bounds -> do
+            validateTypeVarBounds ppos bounds
+            return ty'
+        HigherOrderType{higherTypeParams=tfs} -> do
+            types' <- mapM (validateParamType ppos . typeFlowType) tfs
+            return ty'{higherTypeParams=zipWith setTypeFlowType types' tfs}
+        _ -> return ty'
+
+
+validateTypeVarBounds :: OptPos -> Set TraitSpec -> Validator ()
+validateTypeVarBounds ppos bounds =
+    mapM_ validateTypeVarBound $ Set.toAscList bounds
+  where
+    validateTypeVarBound bound = do
+        validTrait <- lift $ isTraitType bound
+        unless (validTrait || bound == InvalidType) $
+            lift $ message Error
+                ("Invalid type variable bound: " ++ show bound ++ " is not a trait")
+                ppos
+
+
+validateParamTraitType :: TraitSpec -> Validator TypeSpec
+validateParamTraitType tspec = do
+    traitTypeDict <- gets valTraitTypeDict
+    case Map.lookup tspec traitTypeDict of
+        Just typ -> return typ
+        Nothing -> do
+            next <- gets valTypeVarCounter
+            let name = FauxTypeVar next
+            let typ = TypeVariable name (Set.singleton tspec)
+            modify $ \st -> st {valTypeVarCounter = next+1
+                               ,valTraitTypeDict = Map.insert tspec typ $ valTraitTypeDict st}
+            return typ
+
+
+checkDeclIfPublic :: Ident -> OptPos -> Bool -> TypeSpec -> Validator ()
 checkDeclIfPublic pname ppos public ty =
     when (public && ty == AnyType) $
-         message Error ("Public proc " ++ pname ++
+        lift $ message Error ("Public proc " ++ pname ++
                         " with undeclared parameter or return type") ppos
+
+
+getBoundedTypeParams :: [Placed Param] -> [TypeVarBound]
+getBoundedTypeParams params = concatMap boundedParams typeVarNames
+  where
+    paramTypes = paramType . content <$> params
+    typeVarNames = List.nub $ concatMap typeVarNamesIn paramTypes
+    allBounds = Map.unionsWith Set.union $ declaredTypeVarBounds <$> paramTypes
+    boundedParams name =
+        [(name, bound) | bound <- Set.toAscList $
+            Map.findWithDefault Set.empty name allBounds]
+
+
+-- |Return the type variable names in a type, preserving their occurrence order.
+typeVarNamesIn :: TypeSpec -> [TypeVarName]
+typeVarNamesIn TypeVariable{typeVariableName=name} = [name]
+typeVarNamesIn TypeSpec{typeParams=params} = concatMap typeVarNamesIn params
+typeVarNamesIn HigherOrderType{higherTypeParams=flows} =
+    concatMap (typeVarNamesIn . typeFlowType) flows
+typeVarNamesIn _ = []
+
+
+-- |Collect the bounds stated directly on type variables within a type.
+declaredTypeVarBounds :: TypeSpec -> Map TypeVarName (Set TraitSpec)
+declaredTypeVarBounds TypeVariable{typeVariableName=name,typeVariableBounds=bounds} =
+    Map.singleton name bounds
+declaredTypeVarBounds TypeSpec{typeParams=params} =
+    Map.unionsWith Set.union $ declaredTypeVarBounds <$> params
+declaredTypeVarBounds HigherOrderType{higherTypeParams=flows} =
+    Map.unionsWith Set.union $ declaredTypeVarBounds . typeFlowType <$> flows
+declaredTypeVarBounds _ = Map.empty
 
 
 ----------------------------------------------------------------
@@ -150,6 +244,7 @@ instance Show RoughProcSpec where
 typeCheckModSCC :: [ModSpec] -> Compiler ()
 typeCheckModSCC scc = do
     logTypes $ "**** Type checking modules " ++ showModSpecs scc
+
     procs <- concat <$> mapM modProcsDefs scc
     let unresolved = [(spec, spec,
               Set.elems $ Set.unions
@@ -162,7 +257,8 @@ typeCheckModSCC scc = do
        (List.map (("    " ++) . intercalate ", " . List.map show . sccElts)
        ordered)
     errs <- concat <$> mapM typecheckProcSCC ordered
-    mapM_ (queueMessage . typeErrorMessage) errs
+    traitErrs <- concat <$> mapM typecheckLocalTraitImpls scc
+    mapM_ (queueMessage . typeErrorMessage) (errs ++ traitErrs)
 
 
 -- |Return the module, name, and defn of all procs in the specified module
@@ -203,6 +299,15 @@ callResolutions context mods (RoughProc m name) = do
 -- |Either something or some type errors
 data MaybeErr t = OK t | Err [TypeError]
     deriving (Eq,Show)
+
+
+-- |A concrete, same-named procedure that was considered for a trait slot,
+-- together with the expected signature and any errors from type matching.
+data TraitImplMismatch = TraitImplMismatch {
+    traitImplExpected :: CallInfo,
+    traitImplActual   :: CallInfo,
+    traitImplErrors   :: [TypeError]
+} deriving (Eq, Ord)
 
 
 -- |Return a list of the errors in the supplied MaybeErr
@@ -309,6 +414,16 @@ data TypeError = ReasonMessage Message
             --        -- ^The proc is terminal but not declared so
                | ReasonUnnreachable ProcName OptPos
                    -- ^Statement following a terminal statement
+               | ReasonWrongTraitParam ProcName OptPos
+                   -- ^Abstract proc with a wrong number of type parameters that
+                   -- are bounded to the current trait
+               | ReasonNotATrait ProcName OptPos
+                   -- ^Abstract proc defined in a non-trait module
+               | ReasonTraitImplMissing TraitImplSpec ProcName
+                   [TraitImplMismatch] OptPos
+                   -- ^Trait implementation lacks a matching concrete proc
+               | ReasonMultipleTraitImpl TraitImplSpec ProcName OptPos
+                   -- ^Multiple concrete procs exist for a trait implementation
                deriving (Eq, Ord)
 
 
@@ -488,6 +603,88 @@ typeErrorMessage (ReasonActuallyPure kind name impurity pos) =
 typeErrorMessage (ReasonUnnreachable name pos) =
     Message Warning pos $
         "In " ++ showProcName name ++ ", this statement is unreachable"
+typeErrorMessage (ReasonWrongTraitParam name pos) =
+    Message Error pos $
+        "In " ++ showProcIdentifier "abstract proc" name
+        ++ ", there is not exactly one type parameter that is bounded to the current trait"
+typeErrorMessage (ReasonNotATrait name pos) =
+    Message Error pos $
+        "Abstract procedure " ++ name
+        ++ " defined in a non-trait module"
+typeErrorMessage (ReasonTraitImplMissing (TraitImplSpec trait typ) name mismatches pos) =
+    Message Error pos $
+        "Invalid implementation of trait " ++ show trait
+        ++ " for type " ++ show typ
+        ++ if List.null mismatches
+           then ": missing required " ++ showProcName name
+           else ": no matching implementation of " ++ showProcName name
+                ++ List.concatMap showTraitImplMismatch mismatches
+typeErrorMessage (ReasonMultipleTraitImpl (TraitImplSpec trait typ) name pos) =
+    Message Error pos $
+        "Invalid implementation of trait " ++ show trait
+        ++ " for type " ++ show typ
+        ++ ": multiple implementations of "
+        ++ showProcName name
+
+
+-- |Explain why a same-named concrete procedure cannot implement an abstract
+-- procedure.  Header differences are detected before ordinary type matching,
+-- while the retained type errors cover less direct failures such as bounds.
+showTraitImplMismatch :: TraitImplMismatch -> String
+showTraitImplMismatch (TraitImplMismatch expected actual errs) =
+    "\n    candidate " ++ show actual ++ " does not match:"
+    ++ List.concatMap ("\n        " ++) reasons
+  where
+    differences = traitImplHeaderDifferences expected actual
+    fallbackReasons = nub $ messageText . typeErrorMessage <$> errs
+    reasons = if List.null differences then fallbackReasons else differences
+
+
+-- |Describe all directly observable differences between two first-order proc
+-- signatures.  Trait implementation matching only supplies FirstInfo values.
+traitImplHeaderDifferences :: CallInfo -> CallInfo -> [String]
+traitImplHeaderDifferences expected actual =
+    concat
+        [ difference (fiDetism actual) (fiDetism expected)
+            $ "determinism is " ++ determinismFullName (fiDetism actual)
+              ++ ", expected " ++ determinismFullName (fiDetism expected)
+        , difference (fiImpurity actual) (fiImpurity expected)
+            $ "purity is " ++ impurityFullName (fiImpurity actual)
+              ++ ", expected " ++ impurityFullName (fiImpurity expected)
+        , difference (fiInRes actual, fiOutRes actual)
+                     (fiInRes expected, fiOutRes expected)
+            $ "resources are " ++ showTraitImplResources actual
+              ++ ", expected " ++ showTraitImplResources expected
+        , difference (fiNeedsResBang actual) (fiNeedsResBang expected)
+            $ "resourcefulness " ++ isIsNot (fiNeedsResBang actual)
+              ++ " marked with !, but it " ++ isIsNot (fiNeedsResBang expected)
+              ++ " expected"
+        , difference (fiPartial actual) (fiPartial expected)
+            $ "partial application status differs"
+        , if length (fiTypes actual) == length (fiTypes expected)
+          then concat $ zipWith3 paramDifferences [1..]
+                    (zip (fiTypes actual) (fiFlows actual))
+                    (zip (fiTypes expected) (fiFlows expected))
+          else ["has " ++ show (length $ fiTypes actual) ++ " parameter(s), expected "
+                ++ show (length $ fiTypes expected)]
+        ]
+  where
+    difference actualValue expectedValue msg
+        | actualValue == expectedValue = []
+        | otherwise = [msg]
+    isIsNot True = "is"
+    isIsNot False = "is not"
+    showTraitImplResources info =
+        "inputs {" ++ intercalate ", " (show <$> Set.toList (fiInRes info))
+        ++ "}, outputs {"
+        ++ intercalate ", " (show <$> Set.toList (fiOutRes info)) ++ "}"
+    paramDifferences n (actualType, actualFlow) (expectedType, expectedFlow) =
+        difference actualType expectedType
+            ("parameter " ++ show n ++ " has type " ++ show actualType
+             ++ ", expected " ++ show expectedType)
+        ++ difference actualFlow expectedFlow
+            ("parameter " ++ show n ++ " has " ++ showFlowName actualFlow
+             ++ " flow, expected " ++ showFlowName expectedFlow)
 
 
 -- | Get the position from a type error
@@ -534,6 +731,10 @@ typeErrorPos (ReasonBadConstraint _ _ _ _ _ pos) = pos
 typeErrorPos ReasonShouldnt = Nothing
 typeErrorPos (ReasonActuallyPure _ _ _ pos) = pos
 typeErrorPos (ReasonUnnreachable _ pos) = pos
+typeErrorPos (ReasonWrongTraitParam _ pos) = pos
+typeErrorPos (ReasonNotATrait _ pos) = pos
+typeErrorPos (ReasonTraitImplMissing _ _ _ pos) = pos
+typeErrorPos (ReasonMultipleTraitImpl _ _ pos) = pos
 
 
 ----------------------------------------------------------------
@@ -549,8 +750,9 @@ type Typed = StateT Typing Compiler
 --   records bindings of type variables, and contains a counter for generating
 --   new type variables.
 data Typing = Typing {
-                  typingDict::VarDict                -- ^variable types
-                , tvarDict::Map TypeVarName TypeSpec -- ^type variable types
+                  tyProcDef::ProcDef                 -- ^proc definition being checked
+                , typingDict::VarDict                -- ^variable types
+                , tvarDict::TypeVarDict              -- ^type variable bindings and bounds
                 , typeVarCounter::Int                -- ^for renumbering tvars
                 , typingErrs::[TypeError]            -- ^type errors seen
                 , tyTmpCtr::Int                      -- ^temp variable counter
@@ -558,11 +760,11 @@ data Typing = Typing {
                 , tyProcName::ProcName               -- ^proc being checked
                 , tyModule::ModSpec                  -- ^module of checked proc
                 , tyPos::OptPos                      -- ^src position of procdef
-                } deriving (Eq, Ord)
+                } deriving Eq
 
 
 instance Show Typing where
-  show (Typing dict tvardict _ errs _ detism _ _ _) =
+  show (Typing _ dict tvardict _ errs _ detism _ _ _) =
     "Typing " ++ showVarMap dict
     ++ " in " ++ show detism ++ " context; "
     ++ showVarMap (Map.mapKeys show tvardict)
@@ -582,10 +784,13 @@ lookupTyped context pos ty = do
 
 -- |Follow type variables to fully recursively resolve a type.
 ultimateType  :: TypeSpec -> Typed TypeSpec
-ultimateType ty@TypeVariable{typeVariableName=tvar} = do
-    ty' <- gets $ Map.lookup tvar . tvarDict
-    logTyped $ "Type variable " ++ show tvar ++ " is bound to " ++ show ty'
-    maybe (return ty) ultimateType ty'
+ultimateType ty@TypeVariable{typeVariableName=tvar, typeVariableBounds=bounds} = do
+    addTypeVarBounds tvar bounds
+    binding <- gets $ Map.lookup tvar . tvarDict
+    logTyped $ "Type variable " ++ show tvar ++ " has binding " ++ show binding
+    case binding of
+        Just (Left ty') -> ultimateType ty'
+        _               -> return ty
 ultimateType (TypeSpec mod name args) =
     TypeSpec mod name <$> mapM ultimateType args
 ultimateType ty@HigherOrderType{higherTypeParams=typeFlows} = do
@@ -597,17 +802,76 @@ ultimateType ty = return ty
 -- |Bind all type variables in chain to specified type.  Make sure we don't bind
 -- a type variable to itself.
 bindTypeVariables :: TypeSpec -> TypeSpec -> Typed ()
-bindTypeVariables ty1@TypeVariable{typeVariableName=var} ty2
- | ty1 /= ty2 = do
-    nxt <- gets $ Map.lookup var . tvarDict
-    modify $ \t -> t { tvarDict = Map.insert var ty2 $ tvarDict t }
+bindTypeVariables ty1@TypeVariable{typeVariableName=name1} ty2@TypeVariable{typeVariableName=name2} =
+    unless (name1 == name2) $ do
+        nxt <- gets (concreteTypeBinding <=< (Map.lookup name1 . tvarDict))
+        modify $ \t -> t { tvarDict = Map.insert name1 (Left ty2) $ tvarDict t }
+        when (isJust nxt) $ bindTypeVariables (fromJust nxt) ty2
+bindTypeVariables ty1@TypeVariable{typeVariableName=var} ty2 = do
+    nxt <- gets (concreteTypeBinding <=< (Map.lookup var . tvarDict))
+    modify $ \t -> t { tvarDict = Map.insert var (Left ty2) $ tvarDict t }
     when (isJust nxt) $ bindTypeVariables (fromJust nxt) ty2
 bindTypeVariables _ _ = return ()
 
 
+concreteTypeBinding :: Either TypeSpec (Set TraitSpec) -> Maybe TypeSpec
+concreteTypeBinding (Left ty) = Just ty
+concreteTypeBinding Right{}   = Nothing
+
+
+-- |Record a trait constraint for a type variable without replacing its other
+-- constraints.  Once a variable has been bound to a concrete type, that
+-- binding remains authoritative.
+addTypeVarBounds :: TypeVarName -> Set TraitSpec -> Typed ()
+addTypeVarBounds _ bounds | Set.null bounds = return ()
+addTypeVarBounds name bounds =
+    modify $ \typing -> typing { tvarDict =
+        Map.alter addBound name (tvarDict typing) }
+  where
+    addBound Nothing              = Just $ Right bounds
+    addBound old@(Just Left{})    = old
+    addBound (Just (Right oldBounds)) = Just $ Right $ oldBounds `Set.union` bounds
+
+
+typeVarBounds :: TypeSpec -> Typed (Set TraitSpec)
+typeVarBounds ty = gets $ flip typeVarBoundsIn ty . tvarDict
+
+
+-- |Return the bounds stated directly on an occurrence of a type variable,
+-- together with bounds recorded directly for that variable.  This deliberately
+-- does not follow a type-variable binding; callers that need the constraints
+-- of the resolved variable should use 'effectiveTypeVarBoundsIn'.
+typeVarBoundsIn :: TypeVarDict -> TypeSpec -> Set TraitSpec
+typeVarBoundsIn dict TypeVariable{typeVariableName=name, typeVariableBounds=bounds}
+    = bounds `Set.union`
+        case Map.lookup name dict of
+            Just (Right bounds') -> bounds'
+            _                   -> Set.empty
+typeVarBoundsIn _ _ = Set.empty
+
+
+-- |Return all trait bounds known for a type variable, following bindings in
+-- the dictionary.  Matching can bind a candidate variable to another variable
+-- using a @Left@ entry, so a direct lookup can otherwise incorrectly make a
+-- bounded candidate appear unbounded.  The visited set also makes malformed
+-- cyclic bindings harmless.
+effectiveTypeVarBoundsIn :: TypeVarDict -> TypeSpec -> Set TraitSpec
+effectiveTypeVarBoundsIn dict = go Set.empty
+  where
+    go seen ty@TypeVariable{typeVariableName=name,typeVariableBounds=bounds}
+        | name `Set.member` seen = bounds
+        | otherwise = bounds `Set.union` case Map.lookup name dict of
+            Just (Left ty')      -> go (Set.insert name seen) ty'
+            Just (Right bounds') -> bounds'
+            Nothing              -> Set.empty
+    go _ _ = Set.empty
+
+
 -- |The empty typing, assigning every var the type AnyType.
-initTyping :: Determinism -> ProcName -> ModSpec -> OptPos -> Typing
-initTyping = Typing Map.empty Map.empty 0 [] $ shouldnt "unititialised counter"
+initTyping :: ProcDef -> ModSpec -> Typing
+initTyping def mod = Typing def Map.empty Map.empty (procFauxTypeVarCount def) []
+    (shouldnt "unititialised counter") (procDetism def) (procName def) mod
+    (procPos def)
 
 
 -- |Generate and return a new temp variable name
@@ -734,14 +998,29 @@ unifyTypes' reason InvalidType _ = return InvalidType
 unifyTypes' reason _ InvalidType = return InvalidType
 unifyTypes' reason AnyType ty    = return ty
 unifyTypes' reason ty AnyType    = return ty
-unifyTypes' reason ty1@(TypeVariable RealTypeVar{}) ty2@(TypeVariable RealTypeVar{})
-    | ty1 == ty2 = return ty1
-    | otherwise  = invalidTypeError reason
-unifyTypes' reason ty1@TypeVariable{} ty2@TypeVariable{} = return $ min ty1 ty2
-unifyTypes' reason (TypeVariable RealTypeVar{}) _  = invalidTypeError reason
-unifyTypes' reason (TypeVariable FauxTypeVar{}) ty = return ty
-unifyTypes' reason _  (TypeVariable RealTypeVar{}) = invalidTypeError reason
-unifyTypes' reason ty (TypeVariable FauxTypeVar{}) = return ty
+unifyTypes' reason ty1@TypeVariable{typeVariableName=name1}
+                   ty2@TypeVariable{typeVariableName=name2}
+    | name1 == name2 = do
+        mergeTypeVarBounds name1 ty1 ty2
+        return ty1
+unifyTypes' reason ty1@(TypeVariable RealTypeVar{} _) ty2@(TypeVariable RealTypeVar{} _)
+    = invalidTypeError reason
+unifyTypes' _ ty1@TypeVariable{} ty2@TypeVariable{} = do
+    let result = min ty1 ty2
+    mergeTypeVarBounds (typeVariableName result) ty1 ty2
+    return result
+unifyTypes' reason var@TypeVariable{typeVariableName=RealTypeVar{}} ty = do
+    bounds <- typeVarBounds var
+    if Set.null bounds
+        then invalidTypeError reason
+        else unifyTypeVarBounds reason bounds ty
+unifyTypes' reason var@TypeVariable{typeVariableName=FauxTypeVar{}} ty = do
+    bounds <- typeVarBounds var
+    if Set.null bounds
+        then return ty
+        else unifyTypeVarBounds reason bounds ty
+unifyTypes' reason ty var@(TypeVariable RealTypeVar{} _) = unifyTypes' reason var ty
+unifyTypes' reason ty var@(TypeVariable FauxTypeVar{} _) = unifyTypes' reason var ty
 unifyTypes' reason ty1@Representation{} ty2@Representation{}
     | ty1 == ty2 = return ty1
     | otherwise  = invalidTypeError reason
@@ -777,6 +1056,28 @@ unifyTypes' reason (HigherOrderType mods1 ps1) (HigherOrderType mods2 ps2)
         (mods2', (ps2Tys, ps2Fls)) = typeFlowsToSemiDet mods2 ps2 ps1
 unifyTypes' reason _ _ = typeError reason >> return InvalidType
 
+
+-- |Merge the trait bounds carried by two occurrences of one type variable.
+-- The occurrences may each mention a different trait; the variable must meet
+-- all of them.
+mergeTypeVarBounds :: TypeVarName -> TypeSpec -> TypeSpec -> Typed ()
+mergeTypeVarBounds name ty1 ty2 = do
+    bounds1 <- typeVarBounds ty1
+    bounds2 <- typeVarBounds ty2
+    let bounds = bounds1 `Set.union` bounds2
+    unless (Set.null bounds) $
+        modify $ \typing -> typing { tvarDict =
+            Map.insert name (Right bounds) (tvarDict typing) }
+
+
+unifyTypeVarBounds :: TypeError -> Set TraitSpec -> TypeSpec -> Typed TypeSpec
+unifyTypeVarBounds reason bounds ty = do
+    knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
+    if all (\bound -> Map.member (TraitImplSpec bound ty) knownTraitImpls)
+            (Set.toList bounds)
+        then return ty
+        else invalidTypeError reason
+
 invalidTypeError :: TypeError -> Typed TypeSpec
 invalidTypeError reason = typeError reason >> return InvalidType
 
@@ -807,7 +1108,7 @@ freshTypeVar :: Typed TypeSpec
 freshTypeVar = do
     next <- gets typeVarCounter
     modify $ \st -> st { typeVarCounter = next+1 }
-    return $ TypeVariable $ FauxTypeVar next
+    return $ TypeVariable (FauxTypeVar next) Set.empty
 
 
 -- |Record a type error in the current typing.
@@ -825,6 +1126,7 @@ typeErrors errs = do
 localBodyProcs :: ProcImpln -> Set RoughProcSpec
 localBodyProcs (ProcDefSrc body) =
     foldStmts localCalls (const . const) Set.empty body
+localBodyProcs ProcDefAbstract = Set.empty
 localBodyProcs ProcDefPrim{} =
     shouldnt "Type checking compiled code"
 
@@ -854,7 +1156,7 @@ expType' (AnonProc mods params pstmts _ _) pos = do
     params' <- updateParamTypes $ (`maybePlace` pos) <$> params
     return $ HigherOrderType mods $ paramTypeFlow . content <$> params'
 expType' (Closure pspec closed) _ = do
-    ProcDef _ (ProcProto _ params res) _ _ _ _ _ _ detism _ impurity _ _ _
+    ProcDef _ (ProcProto _ params res) _ _ _ _ _ _ _ detism _ impurity _ _ _ _ _
         <- lift $ getProcDef pspec
     let params' = List.filter ((==Ordinary) . paramFlowType . content) params
     let typeFlows = paramTypeFlow . content <$> params'
@@ -864,7 +1166,7 @@ expType' (Closure pspec closed) _ = do
     let (closedFlows, freeFlows) = List.splitAt nClosed pFlows
     if nClosed <= length params' && replicate nClosed ParamIn == closedFlows
     then do
-        pTypes' <- refreshTypes pTypes
+        pTypes' <- refreshTypes Map.empty pTypes
         closedTypes <- mapM expType closed
         zipWithM_ (unifyTypes ReasonShouldnt) pTypes' closedTypes
         freeTypes <- mapM ultimateType (List.drop nClosed pTypes')
@@ -929,6 +1231,121 @@ normaliseModifiers mods@ProcModifiers{modifierImpurity=imp}
            modifierImpurity=max imp Pure,
            modifierVariant=RegularProc}
 
+
+----------------------------------------------------------------
+--                  Type Checking Trait Impls
+----------------------------------------------------------------
+
+-- |Check locally-defined trait impls and store their resolved vtable procs
+typecheckLocalTraitImpls :: ModSpec -> Compiler [TypeError]
+typecheckLocalTraitImpls thisMod = do
+    reenterModule thisMod
+    logMsg Types "Checking local trait impls:"
+    traitImpls <- getModuleImplementationField modKnownTraitImpls
+    traitImplProcs <- mapM (uncurry typecheckLocalTraitImpl)
+            $ Map.toList $ Map.filter (isNothing . content) traitImpls
+    logMsg Types $ "Local trait impls: " ++ show traitImplProcs
+    updateModImplementation $ \imp -> imp { modTraitImplProcs = Map.fromList $ catOKs traitImplProcs }
+    reexitModule
+    return $ concatMap errList traitImplProcs
+
+
+typecheckLocalTraitImpl :: TraitImplSpec -> Placed (Maybe ModSpec)
+                        -> Compiler (MaybeErr (TraitImplSpec, [ProcSpec]))
+typecheckLocalTraitImpl ispec@(TraitImplSpec trait _) traitImpl = do
+    let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
+    let pos = place traitImpl
+    absProcs <- abstractProcs trait
+    matched <- mapM (uncurry (typecheckTraitImplProc pos ispec)) absProcs
+    let errs = concatMap errList matched
+    return $ if List.null errs
+        then OK (ispec, catOKs matched)
+        else Err errs
+
+
+typecheckTraitImplProc :: OptPos -> TraitImplSpec -> ProcSpec -> ProcDef -> Compiler (MaybeErr ProcSpec)
+typecheckTraitImplProc pos ispec absProcSpec absProcDef = do
+    thisMod <- getModuleSpec
+    knownProcs <- getModuleImplementationField modKnownProcs
+    let name = procName absProcDef
+        procSpecs = Set.toList $ Map.findWithDefault Set.empty name knownProcs
+    implProcSpecs <- filterM (fmap (isNothing . procAbstract) . getProcDef) procSpecs
+    results <- mapM (matchTraitImplProc ispec absProcSpec absProcDef) implProcSpecs
+    let (mismatches, matches) = partitionEithers results
+    let preferredMatches = List.filter ((== thisMod) . procSpecMod) matches
+        matches' = if List.null preferredMatches then matches else preferredMatches
+    return $ case matches' of
+        [match] -> OK match
+        []      -> Err [ReasonTraitImplMissing ispec name mismatches pos]
+        _       -> Err [ReasonMultipleTraitImpl ispec name pos]
+
+
+matchTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
+                     -> Compiler (Either TraitImplMismatch ProcSpec)
+matchTraitImplProc ispec@(TraitImplSpec trait _) absProcSpec absProcDef implProcSpec = do
+    implProcDef <- getProcDef implProcSpec
+    let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
+        absProcDef' = absProcDef { procProto = traitImplProcProto ispec absProcDef }
+    ((absInfo, implInfo, result), _) <- runStateT
+        (matchTraitImplProc' absProcSpec absProcDef' implProcSpec implProcDef)
+        $ initTyping absProcDef' traitMod
+
+    return $ case result of
+        OK _ -> Right implProcSpec
+        Err errs -> Left $ TraitImplMismatch absInfo implInfo errs
+
+
+matchTraitImplProc' :: ProcSpec -> ProcDef -> ProcSpec -> ProcDef
+                    -> Typed (CallInfo, CallInfo,
+                              MaybeErr (CallInfo, Typing))
+matchTraitImplProc' absProcSpec absProcDef implProcSpec implProcDef = do
+    absInfo <- firstInfo absProcDef absProcSpec
+    implInfo <- firstInfo implProcDef implProcSpec
+    let absInfo' = fromMaybe absInfo $ boolFnToTest absInfo
+        implInfo' = fromMaybe implInfo $ boolFnToTest implInfo
+    let pos = procPos absProcDef
+        hasBang = fiNeedsResBang absInfo
+    result <- if matchTraitImplHeaders absInfo' implInfo'
+        then matchTypes (procName absProcDef) (procName implProcDef) pos hasBang
+            (fiTypes absInfo) (fiFlows absInfo) implInfo
+        else do
+            logTyped $ "proc headers mismatched: \n" ++ show absInfo ++ "\n" ++ show implInfo
+            return $ Err []
+    return (absInfo', implInfo', result)
+
+
+matchTraitImplHeaders :: CallInfo -> CallInfo -> Bool
+matchTraitImplHeaders absInfo implInfo =
+    fiDetism absInfo == fiDetism implInfo
+    && fiImpurity absInfo == fiImpurity implInfo
+    && fiFlows absInfo == fiFlows implInfo
+    && fiInRes absInfo == fiInRes implInfo
+    && fiOutRes absInfo == fiOutRes implInfo
+    && fiNeedsResBang absInfo == fiNeedsResBang implInfo
+    && fiPartial absInfo == fiPartial implInfo
+
+
+traitImplProcProto :: TraitImplSpec -> ProcDef -> ProcProto
+traitImplProcProto ispec@(TraitImplSpec trait implTy) absProcDef = do
+    let proto = procProto absProcDef
+        bounds = Map.fromListWith Set.union
+            [(name, Set.singleton bound) | (name, bound) <- procBoundedTypeParams absProcDef]
+    proto { procProtoParams = contentApply (substParam bounds) <$> procProtoParams proto }
+    where
+        substParam bounds param =
+            param { paramType = substParamType bounds $ paramType param }
+        substParamType bounds ty@TypeVariable{typeVariableName=name}
+            | trait `Set.member` Map.findWithDefault Set.empty name bounds = implTy
+            | otherwise = ty
+        substParamType bounds ty@TypeSpec{typeParams=params} =
+            ty { typeParams = substParamType bounds <$> params }
+        substParamType bounds ty@HigherOrderType{higherTypeParams=tfs} =
+            ty { higherTypeParams = substTypeFlow bounds <$> tfs }
+        substParamType _ ty = ty
+        substTypeFlow bounds tf =
+            tf { typeFlowType = substParamType bounds $ typeFlowType tf }
+
+
 ----------------------------------------------------------------
 --                         Type Checking Procs
 ----------------------------------------------------------------
@@ -974,9 +1391,7 @@ typecheckProcDecl (RoughProc m name) = do
     (revdefs,sccAgain,reasons) <-
         foldM (\(ds,sccAgain,rs) def -> do
                 ((d,again),st) <- runStateT (typecheckProcDecl' def)
-                                $ initTyping (procDetism def)
-                                             (procName def) m
-                                             (procPos def)
+                                $ initTyping def m
                 return (d:ds, sccAgain || again, typingErrs st++rs))
         ([],False,[]) defs
     updateModImplementation
@@ -1028,7 +1443,7 @@ typecheckProcDecl (RoughProc m name) = do
 data CallInfo
     = FirstInfo {                            -- A first order call
         fiProc         :: ProcSpec           -- ^the called proc
-      , fiTypes        :: [TypeSpec]         -- ^its formal param types
+      , fiTypes        :: [TypeSpec]         -- ^its declared formal param types
       , fiFlows        :: [FlowDirection]    -- ^its formal param flows
       , fiDetism       :: Determinism        -- ^its determinism
       , fiImpurity     :: Impurity           -- ^its impurity
@@ -1036,6 +1451,7 @@ data CallInfo
       , fiOutRes       :: Set ResourceSpec   -- ^its output resources
       , fiNeedsResBang :: Bool               -- ^whether its calls need a bang
       , fiPartial      :: Bool               -- ^whether this call is partial
+      , fiMatchedTypes :: [TypeSpec]         -- ^its formal types matched to this call
     } | HigherInfo {                         -- A higher order call
         hiFunc         :: Exp                -- ^variable being called
     } | TestInfo {                           -- A test call
@@ -1048,12 +1464,13 @@ data CallInfo
 
 
 instance Show CallInfo where
-    show (FirstInfo procSpec tys flows detism impurity inRes outRes _ partial) =
+    show (FirstInfo procSpec tys flows detism impurity inRes outRes _ partial matchedTys) =
         (if partial then "partial application of " else "")
         ++ showProcModifiers' (ProcModifiers detism MayInline impurity
                                 RegularProc False)
         ++ show procSpec
         ++ "(" ++ intercalate "," (zipWith ((show .) . TypeFlow) tys flows) ++ ")"
+        ++ " -> (" ++ intercalate "," (zipWith ((show .) . TypeFlow) matchedTys flows) ++ ")"
         ++ if Set.null inRes && Set.null outRes
             then ""
             else " use "
@@ -1072,11 +1489,13 @@ boolFnToTest :: CallInfo -> Maybe CallInfo
 boolFnToTest info@FirstInfo{fiDetism=Det,
                             fiPartial=False,
                             fiTypes=tys,
+                            fiMatchedTypes=matchedTys,
                             fiFlows=flows}
     | List.null tys = Nothing
     | last tys == boolType && last flows == ParamOut =
         Just $ info {fiDetism=SemiDet,
                      fiTypes=init tys,
+                     fiMatchedTypes=init matchedTys,
                      fiFlows=init flows}
     | otherwise = Nothing
 boolFnToTest _ = Nothing
@@ -1089,9 +1508,11 @@ testToBoolFn :: CallInfo -> Maybe CallInfo
 testToBoolFn info@FirstInfo{fiDetism=SemiDet,
                             fiPartial=False,
                             fiTypes=tys,
+                            fiMatchedTypes=matchedTys,
                             fiFlows=flows}
     = Just $ info {fiDetism=Det,
                    fiTypes=tys ++ [boolType],
+                   fiMatchedTypes=matchedTys ++ [boolType],
                    fiFlows=flows ++ [ParamOut]}
 testToBoolFn _ = Nothing
 
@@ -1104,6 +1525,7 @@ testToBoolFn _ = Nothing
 procToPartial :: [FlowDirection] -> Bool -> CallInfo -> (Maybe CallInfo, Bool)
 procToPartial callFlows hasBang info@FirstInfo{fiPartial=False,
                                                fiTypes=tys,
+                                               fiMatchedTypes=matchedTys,
                                                fiFlows=flows,
                                                fiInRes=inRes,
                                                fiOutRes=outRes,
@@ -1115,17 +1537,23 @@ procToPartial callFlows hasBang info@FirstInfo{fiPartial=False,
                      || length callFlows <= length tys + 1 && usesResources)
         = (Just info{fiPartial=True,
                      fiTypes=closedTys ++ [higherTy],
+                     fiMatchedTypes=closedMatchedTys ++ [higherMatchedTy],
                      fiFlows=closedFls ++ [ParamOut]}, needsBang)
   where
     nClosed = length callFlows - 1
     (closedTys, higherTys) = List.splitAt nClosed tys
+    (closedMatchedTys, higherMatchedTys) = List.splitAt nClosed matchedTys
     (closedFls, higherFls) = List.splitAt nClosed flows
     usesResources = not (Set.null inRes) || not (Set.null outRes)
     needsBang = resful || impurity > Pure
     higherTy = HigherOrderType (normaliseModifiers
-                                $ ProcModifiers detism MayInline
-                                    impurity RegularProc resful)
-                    $ zipWith TypeFlow higherTys higherFls
+                                        $ ProcModifiers detism MayInline
+                                            impurity RegularProc resful)
+                           $ zipWith TypeFlow higherTys higherFls
+    higherMatchedTy = HigherOrderType (normaliseModifiers
+                                       $ ProcModifiers detism MayInline
+                                           impurity RegularProc resful)
+                          $ zipWith TypeFlow higherMatchedTys higherFls
 procToPartial _ _ _ = (Nothing, False)
 
 
@@ -1150,8 +1578,10 @@ typecheckProcDecl' pdef = do
     let name = procName pdef
     logTyped $ "Type checking " ++ showProcName name
     let proto = procProto pdef
+    let abstract = isJust $ procAbstract pdef
     let posParams = procProtoParams proto
     let params = content <$> posParams
+    let boundedTypeParams = procBoundedTypeParams pdef
     let resources = procProtoResources proto
     let tmpCount = procTmpCount pdef
     let (ProcDefSrc def) = procImpln pdef
@@ -1171,6 +1601,13 @@ typecheckProcDecl' pdef = do
     let inputs = Set.union inParams $ Set.fromList inResources
     when (vis == Public && any ((==AnyType) . paramType) params)
         $ typeError $ ReasonUndeclared name pos
+    when abstract $ do
+        tyMod <- gets tyModule
+        trait <- lift $ getModule modTrait `inModule` tyMod
+        if isNothing trait then typeError $ ReasonNotATrait name pos
+        else do
+            let nTraitParam = length $ List.filter (\(_, trait) -> typeModule trait == Just tyMod) boundedTypeParams
+            when (nTraitParam /= 1) $ typeError $ ReasonWrongTraitParam name pos
     ifOK pdef $ do
         logTyping $ "** Type checking " ++ showProcName name ++ ": "
         logTyped $ "   with resources: " ++ show resources
@@ -1333,7 +1770,24 @@ updateParamTypes :: [Placed Param] -> Typed [Placed Param]
 updateParamTypes =
     mapM $ updatePlacedM (\p -> do
                             ty <- ultimateVarType (paramName p)
-                            return p{paramType=ty})
+                            ty' <- updateTypeVarBounds ty
+                            return p{paramType=ty'})
+
+
+-- |Materialise inferred type-variable bounds into a type that will outlive
+-- the @Typing@ state.
+updateTypeVarBounds :: TypeSpec -> Typed TypeSpec
+updateTypeVarBounds ty@TypeVariable{} = do
+    dict <- gets tvarDict
+    return ty { typeVariableBounds = effectiveTypeVarBoundsIn dict ty }
+updateTypeVarBounds ty@TypeSpec{typeParams=params} = do
+    params' <- mapM updateTypeVarBounds params
+    return ty { typeParams = params' }
+updateTypeVarBounds ty@HigherOrderType{higherTypeParams=flows} = do
+    types <- mapM (updateTypeVarBounds . typeFlowType) flows
+    return ty { higherTypeParams = zipWith TypeFlow types
+                    (typeFlowMode <$> flows) }
+updateTypeVarBounds ty = return ty
 
 
 -- |Return a list of the proc and foreign calls recursively in a list of
@@ -1465,8 +1919,10 @@ firstInfo def proc = do
                          || any isResourcefulHigherOrder types
         detism = procDetism def
         imp = procImpurity def
-    types' <- refreshTypes types
-    return $ FirstInfo proc types' flows detism imp inResources outResources needsResBang False
+    let typeBounds = typeVarBoundDict $ procBoundedTypeParams def
+    types' <- refreshTypes typeBounds types
+    return $ FirstInfo proc types' flows detism imp inResources outResources
+                       needsResBang False types'
 
 
 -- |Return the "primitive" expr of the specified expr.  This unwraps Typed
@@ -1496,35 +1952,48 @@ ultimateExp expr = expr
 --  we keep all of them as a residue and continue with other statements.  If
 --  no possibilities remain, we determine that the statement typing is
 --  inconsistent with the initial variable typing (a type error).
+--
+--  Parameters:
+--  * The statement typings still to be checked in the current pass.
+--  * The unresolved statement typings to retry in a later pass.
+--  * Whether this pass has resolved at least one statement typing.
+--  * Foreign statements whose type declarations are validated once all calls
+--    have been resolved.
 typecheckCalls :: [StmtTypings] -> [StmtTypings] -> Bool -> [Placed Stmt]
                -> Typed ()
-typecheckCalls [] [] _ foreigns =
+typecheckCalls = typecheckCalls' False
+
+
+-- |Like 'typecheckCalls', but with a flag to force its first call to be checked.
+typecheckCalls' :: Bool -> [StmtTypings] -> [StmtTypings] -> Bool
+                   -> [Placed Stmt] -> Typed ()
+typecheckCalls' _ [] [] _ foreigns =
     mapM_ (placedApply validateForeign) foreigns
-typecheckCalls [] residue True foreigns =
-    typecheckCalls residue [] False foreigns
-typecheckCalls [] residue@(overloaded:_) False foreigns = do
+typecheckCalls' _ [] residue True foreigns =
+    typecheckCalls' False residue [] False foreigns
+typecheckCalls' _ [] residue@(overloaded:_) False foreigns = do
     let (typings@StmtTypings{typingInfos=infos},rest) = findMinimumTyping residue
     logTyped $ "Recursively checking types with " ++ show typings
     let (moves, nonMoves) = List.partition isMove infos
     let (partials, realCalls) = List.partition isPartial nonMoves
-    List.foldr (typecheckCalls' typings rest) 
-        (typeError (overloadErr overloaded) >> typecheckCalls [] [] False foreigns)
+    List.foldr (typecheckCalls'' typings rest)
+        (typeError (overloadErr typings) >> typecheckCalls [] [] False foreigns)
         [moves, realCalls, partials]
   where
-    typecheckCalls' _ _ [] alt = alt 
-    typecheckCalls' typings rest infos alt = do 
+    typecheckCalls'' _ _ [] alt = alt
+    typecheckCalls'' typings rest infos alt = do
         typings' <- snd <$$> mapM (getTyping . typecheckCallWithInfo typings rest) infos
         case List.filter (List.null . typingErrs) typings' of
             [typing] -> do
                 logTyped "Found one valid typing"
                 put typing
             valid -> do
-                logTyped $ "Still ambiguous: " ++ show (length valid) 
+                logTyped $ "Still ambiguous: " ++ show (length valid)
                 alt
     typecheckCallWithInfo typings rest info = do
         logTyped $ "-> Trying info " ++ show info
-        typecheckCalls (typings{typingInfos=[info]}:rest) [] False foreigns
-typecheckCalls (stmtTyping@(StmtTypings pstmt typs):calls)
+        typecheckCalls' True (typings{typingInfos=[info]}:rest) [] False foreigns
+typecheckCalls' forceFirst (stmtTyping@(StmtTypings pstmt typs):calls)
         residue chg foreigns = do
     logTyped $ "Type checking call " ++ show pstmt
     logTyped $ "Candidate types:\n    " ++ intercalate "\n    " (show <$> typs)
@@ -1548,38 +2017,106 @@ typecheckCalls (stmtTyping@(StmtTypings pstmt typs):calls)
         mapM (\match -> (match, ) <$> uncurry (canonicaliseMatch stmtPos) match)
             $ catOKs matches
     let validTypes = fst <$> nubBy ((==) `on` snd) canonMatches
-    logTyped $ "Valid types = " ++ show (snd <$> validTypes)
+    preferredTypes <- preferTraitMatches actualTypes validTypes
+    logTyped $ "Valid types = " ++ show (snd <$> preferredTypes)
     let matchErrs = concatMap errList matches
-    case validTypes of
+    case preferredTypes of
         [] -> do
             logTyped "Type error: no valid types for call"
             typeErrors matchErrs
         [(_,typing)] -> do
-            put typing
-            logTyping "Resulting typing = "
-            typecheckCalls calls residue True foreigns
+            let matchProcInfos = fst <$> preferredTypes
+                stmtTyping' = stmtTyping {typingInfos = matchProcInfos}
+            if not forceFirst && (not . Set.null $ unsolvedInputDependencies stmtTyping' (calls ++ residue))
+            then do
+                logTyped "Delaying call until its unresolved input dependencies is typed"
+                typecheckCalls' False calls (stmtTyping':residue) chg foreigns
+            else do
+                put typing
+                logTyping "Resulting typing = "
+                typecheckCalls' False calls residue True foreigns
         _ -> do
-            let matchProcInfos = fst <$> validTypes
+            let matchProcInfos = fst <$> preferredTypes
             let stmtTyping' = stmtTyping {typingInfos = matchProcInfos}
-            typecheckCalls calls (stmtTyping':residue)
+            typecheckCalls' False calls (stmtTyping':residue)
                 (chg || matchProcInfos /= typs) foreigns
 
 
--- | Find the StmtTypings with the least number of possibile typingInfos,
--- returning the "minimum" StmtTyping and all others
+-- |When inferring a private procedure's type, prefer a bounded trait candidate
+-- over concrete implementations.  A fresh inferred variable carries no
+-- information that could select a concrete overload, while the bounded
+-- candidate supplies the trait constraint needed by the inferred signature.
+preferTraitMatches :: [TypeSpec] -> [(CallInfo, Typing)]
+                            -> Typed [(CallInfo, Typing)]
+preferTraitMatches actualTypes matches = do
+    inferredParamVars <- currentInferredParamVars
+    if Set.null inferredParamVars
+    then return matches
+    else do
+        traitMatches <- filterM
+            (isBoundedTraitCandidate inferredParamVars) matches
+        return $ if List.null traitMatches then matches else traitMatches
+  where
+    isBoundedTraitCandidate inferredVars
+                            (FirstInfo{fiPartial=False}, typing) =
+        return $ any (hasTraitBound typing)
+            (Set.toList $ inferredVars `Set.intersection`
+                Set.unions (typeVarSet <$> actualTypes))
+    isBoundedTraitCandidate _ _ = return False
+
+    hasTraitBound typing name = not . Set.null $
+        effectiveTypeVarBoundsIn (tvarDict typing)
+            (TypeVariable name Set.empty)
+
+
+-- |Find type variables that came from inferred parameters of the procedure
+-- currently being checked.  Trait preference is an inference aid, not a
+-- general overload-resolution rule: it must only affect a call that actually
+-- carries one of those parameter variables.
+currentInferredParamVars :: Typed (Set TypeVarName)
+currentInferredParamVars = do
+    def <- gets tyProcDef
+    let inferredParamNames = [paramName param
+              | procVis def == Private
+              , param <- content <$> procProtoParams (procProto def)
+              , paramType param == AnyType]
+    types <- mapM (varType >=> ultimateType) inferredParamNames
+    return $ Set.unions (typeVarSet <$> types)
+
+
+-- | Pick a typing whose inputs depend on the fewest unresolved call outputs.
+-- Prefer fewer ordinary candidates when the calls are otherwise independent.
 findMinimumTyping :: [StmtTypings] -> (StmtTypings, [StmtTypings])
 findMinimumTyping [] = shouldnt "findMinimumTyping"
-findMinimumTyping (typing:typings) = go typings typing (size typing) []
-  where 
-    go [] typing' _ acc = (typing', acc)
-    go (typing:rest) typing' sizeTyping' acc
-        | sizeTyping < sizeTyping'
-        = go rest typing sizeTyping (typing':acc)
+findMinimumTyping (typing:typings) = go typings typing []
+  where
+    go [] selected acc = (selected, acc)
+    go (typing:rest) selected acc
+        | priority typing (selected:acc ++ rest) < priority selected (acc ++ typing:rest)
+        = go rest typing (selected:acc)
         | otherwise
-        = go rest typing' sizeTyping' (typing:acc)
-      where sizeTyping = size typing
-    size = (length *** length) . List.partition (not . isPartial) . typingInfos
+        = go rest selected (typing:acc)
+    priority typing others =
+        (Set.size (unsolvedInputDependencies typing others),
+         length $ List.filter (not . isPartial) $ typingInfos typing)
 
+
+-- |The set of values that consumed by a call and produced by other unresolved calls
+unsolvedInputDependencies :: StmtTypings -> [StmtTypings] -> Set VarName
+unsolvedInputDependencies typing unresolved =
+    typingInputs typing `Set.intersection`
+    Set.unions (List.map typingOutputs unresolved)
+
+
+typingInputs :: StmtTypings -> Set VarName
+typingInputs = stmtsInputs . (:[]) . typingStmt
+
+
+typingOutputs :: StmtTypings -> Set VarName
+typingOutputs StmtTypings{typingStmt=pstmt} =
+    case content pstmt of
+        ProcCall _ _ _ args -> pexpListOutputs args
+        _ -> Set.empty
 
 isPartial :: CallInfo -> Bool
 isPartial FirstInfo{fiPartial=p} = p
@@ -1703,7 +2240,7 @@ matchTypeList callee pos callTypes
     let mismatches = List.map fst $ List.filter (invalidType . snd)
                        $ zip [1..] matches
     return $ if List.null mismatches
-    then OK (calleeInfo{fiTypes=matches}, typing)
+    then OK (calleeInfo{fiMatchedTypes=matches}, typing)
     else Err $ [ReasonArgType partial callee n pos | n <- mismatches]
             ++ typingErrs typing
 matchTypeList _ _ _ info = shouldnt $ "matchTypeList on " ++ show info
@@ -1712,9 +2249,13 @@ matchTypeList _ _ _ info = shouldnt $ "matchTypeList on " ++ show info
 
 unifyTypeList' :: ProcName -> OptPos -> [TypeSpec] -> [TypeSpec] -> Typed [TypeSpec]
 unifyTypeList' callee pos callerTypes calleeTypes
-    = zipWith3M (unifyTypes . flip (ReasonArgType False callee) pos)
-                        [1..] callerTypes calleeTypes
-        >>= mapM ultimateType
+    = zipWith3M unifyArg [1..] callerTypes calleeTypes >>= mapM ultimateType
+    where
+        unifyArg n callerTy calleeTy = do
+            mismatch <- typeVarMismatch callerTy calleeTy
+            if mismatch
+                then return InvalidType
+                else unifyTypes (ReasonArgType False callee n pos) callerTy calleeTy
 
 
 invalidType :: TypeSpec -> Bool
@@ -1724,57 +2265,112 @@ invalidType (HigherOrderType _ tfs) = any (invalidType . typeFlowType) tfs
 invalidType _ = False
 
 
+-- |A bounded caller parameter type cannot be passed to a concrete parameter
+-- just because it has trait bounds.  Bounded variables produced inside the
+-- body are allowed through to unification, which can check known trait
+-- implementations and specialize outputs.
+typeVarMismatch :: TypeSpec -> TypeSpec -> Typed Bool
+typeVarMismatch callerTy@TypeVariable{} calleeTy = do
+    callerBounds <- typeVarBounds callerTy
+    if Set.null callerBounds
+        then return False
+        else case calleeTy of
+            TypeVariable{} -> return False
+            _ -> typeVarFromInputParam callerTy
+typeVarMismatch _ _ = return False
+
+
+-- |Return true if the type variable appears in an input parameter of the proc
+-- currently being checked.
+typeVarFromInputParam :: TypeSpec -> Typed Bool
+typeVarFromInputParam ty = do
+    def <- gets tyProcDef
+    let inputParams =
+            [param
+              | param <- content <$> procProtoParams (procProto def)
+              , flowsIn (paramFlow param)]
+        declaredVars = Set.unions $ typeVarSet . paramType <$> inputParams
+    inferredTypes <- mapM (varType . paramName) inputParams
+    let inferredVars = Set.unions $ typeVarSet <$> inferredTypes
+        inputParamVars = declaredVars `Set.union` inferredVars
+    return $ not . Set.null $ typeVarSet ty `Set.intersection` inputParamVars
+
+
 -- | Canonicalise a list of types, with type variables starting from the
--- supplied Int
-canonicalise :: Int -> [TypeSpec] -> ([TypeSpec],Int)
-canonicalise ctr tys = fst $ canonicaliseList Map.empty ctr tys
+-- supplied Int.  The returned dictionary is in the canonical namespace and
+-- contains the effective trait bounds of every generated type variable.
+canonicalise :: Int -> TypeVarDict -> [TypeSpec]
+             -> (([TypeSpec], TypeVarDict), Int)
+canonicalise ctr tvarDict tys =
+    let (tys', ctr', (_, canonicalDict)) =
+            canonicaliseList tvarDict (Map.empty, Map.empty) ctr tys
+    in ((tys', canonicalDict), ctr')
 
 
-canonicaliseList :: Map TypeVarName TypeSpec -> Int -> [TypeSpec]
-                 -> (([TypeSpec], Int), Map TypeVarName TypeSpec)
-canonicaliseList tyMap ctr [] = (([],ctr), tyMap)
-canonicaliseList tyMap ctr (ty:tys) =
-    let ((ty', ctr'), tyMap') = canonicaliseSingle tyMap ctr ty
-        ((tys', ctr''), tyMap'') = canonicaliseList tyMap' ctr' tys
-    in ((ty':tys', ctr''), tyMap'')
+type Canonicalisation = (Map TypeVarName TypeSpec, TypeVarDict)
 
 
-canonicaliseSingle :: Map TypeVarName TypeSpec -> Int -> TypeSpec
-                   -> ((TypeSpec, Int), Map TypeVarName TypeSpec)
-canonicaliseSingle tyMap ctr (TypeVariable ty) =
-    case Map.lookup ty tyMap of
+canonicaliseList :: TypeVarDict -> Canonicalisation -> Int -> [TypeSpec]
+                 -> ([TypeSpec], Int, Canonicalisation)
+canonicaliseList _ state ctr [] = ([], ctr, state)
+canonicaliseList tvarDict state ctr (ty:tys) =
+    let (ty', ctr', state') = canonicaliseSingle tvarDict state ctr ty
+        (tys', ctr'', state'') = canonicaliseList tvarDict state' ctr' tys
+    in (ty':tys', ctr'', state'')
+
+
+canonicaliseSingle :: TypeVarDict -> Canonicalisation -> Int -> TypeSpec
+                   -> (TypeSpec, Int, Canonicalisation)
+canonicaliseSingle tvarDict state@(tyMap, canonicalDict) ctr ty@TypeVariable{typeVariableName=name} =
+    case Map.lookup name tyMap of
+        Just ty' -> (ty', ctr, state)
         Nothing ->
-            let ty' = TypeVariable $ FauxTypeVar ctr
-            in ((ty', ctr + 1),Map.insert ty ty' tyMap)
-        Just ty' -> ((ty', ctr),tyMap)
-canonicaliseSingle tyMap ctr ty@TypeSpec{typeParams=tys} =
-    let ((tys', ctr'), tyMap') = canonicaliseList tyMap ctr tys
-    in ((ty{typeParams=tys'}, ctr'), tyMap')
-canonicaliseSingle tyMap ctr ty@HigherOrderType{higherTypeParams=tfs} =
+            let ty' = TypeVariable (FauxTypeVar ctr) Set.empty
+                bounds = typeVarBoundsIn tvarDict ty
+                canonicalDict' = if Set.null bounds
+                    then canonicalDict
+                    else Map.insert (FauxTypeVar ctr) (Right bounds) canonicalDict
+            in (ty', ctr + 1, (Map.insert name ty' tyMap, canonicalDict'))
+canonicaliseSingle tvarDict state ctr ty@TypeSpec{typeParams=tys} =
+    let (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
+    in (ty{typeParams=tys'}, ctr', state')
+canonicaliseSingle tvarDict state ctr ty@HigherOrderType{higherTypeParams=tfs} =
     let tys = typeFlowType <$> tfs
-        ((tys', ctr'), tyMap') = canonicaliseList tyMap ctr tys
-    in ((ty{higherTypeParams=zipWith TypeFlow tys' $ typeFlowMode <$> tfs}, ctr'), tyMap')
-canonicaliseSingle tyMap ctr ty = ((ty, ctr), tyMap)
+        (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
+    in (ty{higherTypeParams=zipWith TypeFlow tys' $ typeFlowMode <$> tfs}, ctr', state')
+canonicaliseSingle _ state ctr ty = (ty, ctr, state)
 
 
--- | Refresh all type variables in a list of TypeSpecs.
--- Does not modify the underlying Typing, excluding the typeVarCounter
-refreshTypes :: [TypeSpec] -> Typed [TypeSpec]
-refreshTypes tys = do
+typeVarBoundDict :: [TypeVarBound] -> TypeVarDict
+typeVarBoundDict = Map.fromListWith mergeBounds . List.map toBound
+  where
+    toBound (name, bound) = (name, Right $ Set.singleton bound)
+    mergeBounds (Right left) (Right right) = Right $ left `Set.union` right
+    mergeBounds left _ = left
+
+
+-- | Refresh all type variables in a list of TypeSpecs.  The source dictionary
+-- supplies constraints that are not present on every TypeVariable occurrence.
+refreshTypes :: TypeVarDict -> [TypeSpec] -> Typed [TypeSpec]
+refreshTypes sourceDict tys = do
     tyVarCount <- gets typeVarCounter
-    let (tys', tyVarCount') = canonicalise tyVarCount tys
-    modify (\s -> s{typeVarCounter=tyVarCount'})
+    let ((tys', canonicalDict), tyVarCount') =
+            canonicalise tyVarCount sourceDict tys
+    modify (\s -> s { typeVarCounter=tyVarCount'
+                     , tvarDict=canonicalDict `Map.union` tvarDict s })
     when (tys /= tys')
         $ logTyped $ "Refreshed types " ++ show tys ++ " with " ++ show tys'
     return tys'
 
 
-canonicaliseMatch :: OptPos -> CallInfo -> Typing -> Typed [TypeSpec]
+canonicaliseMatch :: OptPos -> CallInfo -> Typing
+                  -> Typed ([TypeSpec], TypeVarDict)
 canonicaliseMatch pos callInfo typing = do
-    ultimateTypes <- fst <$> getTyping (put typing >> callInfoTypes callInfo >>= mapM ultimateType)
-    return $ fst $ canonicalise 0 ultimateTypes
+    (ultimateTypes, resolvedTyping) <-
+        getTyping (put typing >> callInfoTypes callInfo >>= mapM ultimateType)
+    return $ fst $ canonicalise 0 (tvarDict resolvedTyping) ultimateTypes
   where
-    callInfoTypes FirstInfo{fiTypes=tys} = return tys
+    callInfoTypes FirstInfo{fiMatchedTypes=tys} = return tys
     callInfoTypes (HigherInfo exp) = (:[]) <$> expType' exp pos
     callInfoTypes (TestInfo exp) = (:[]) <$> expType' exp pos
     callInfoTypes (MoveInfo from to) = mapM expType [from,to]
@@ -2088,6 +2684,123 @@ exactModeMatch _ HigherInfo{} = True
 exactModeMatch _ TestInfo{} = True
 exactModeMatch _ MoveInfo{} = True
 
+
+-- |Return true if this is a concrete proc in a trait module with a matching
+-- abstract proc, making it a default trait implementation
+isDefaultTraitImpl :: CallInfo -> Compiler Bool
+isDefaultTraitImpl FirstInfo{fiProc=pspec} = do
+    let modspec = procSpecMod pspec
+        name = procSpecName pspec
+    trait <- getModule modTrait `inModule` modspec
+    if isNothing trait
+        then return False
+        else do
+            def <- getProcDef pspec
+            defs <- getModuleImplementationField
+                        (Map.findWithDefault [] name . modProcs)
+                        `inModule` modspec
+            return $ isNothing (procAbstract def)
+                && any (\candidate ->
+                    isJust (procAbstract candidate)
+                    && matchProcSignatures def candidate) defs
+isDefaultTraitImpl _ = return False
+
+
+-- |Return true if two proc definitions have alpha-equivalent signatures
+matchProcSignatures :: ProcDef -> ProcDef -> Bool
+matchProcSignatures left right =
+    canonicalTypes left == canonicalTypes right
+    && paramFlows left == paramFlows right
+    && paramFlowTypes left == paramFlowTypes right
+    && procProtoResources (procProto left)
+        == procProtoResources (procProto right)
+    && procDetism left == procDetism right
+    && procImpurity left == procImpurity right
+  where
+    params = List.map content . procProtoParams . procProto
+    canonicalTypes def =
+        fst $ canonicalise 0 (typeVarBoundDict $ procBoundedTypeParams def)
+            $ List.map paramType $ params def
+    paramFlows def = List.map paramFlow $ params def
+    paramFlowTypes def = List.map paramFlowType $ params def
+
+
+-- |Return true if the first type accepts every value accepted by the second
+moreGeneral :: Map TraitImplSpec (Placed (Maybe ModSpec))
+                -> TypeVarDict -> TypeVarDict -> TypeSpec -> TypeSpec -> Bool
+moreGeneral _ _ _ general specific
+    | general == specific = True
+moreGeneral _ _ _ AnyType _ = True
+moreGeneral traitImpls generalDict specificDict general@TypeVariable{} specific =
+    let generalBounds = typeVarBoundsIn generalDict general
+    in Set.null generalBounds || case specific of
+        specificVar@TypeVariable{} ->
+            generalBounds `Set.isSubsetOf`
+                typeVarBoundsIn specificDict specificVar
+        _ -> all (\bound -> Map.member (TraitImplSpec bound specific) traitImpls)
+            (Set.toList generalBounds)
+moreGeneral traitImpls generalDict specificDict
+        (TypeSpec generalMod generalName generalParams)
+        (TypeSpec specificMod specificName specificParams) =
+    generalMod == specificMod
+    && generalName == specificName
+    && sameLength generalParams specificParams
+    && and (List.zipWith (moreGeneral traitImpls generalDict specificDict)
+                          generalParams specificParams)
+moreGeneral traitImpls generalDict specificDict
+        (HigherOrderType generalMods generalParams)
+        (HigherOrderType specificMods specificParams) =
+    generalMods == specificMods
+    && sameLength generalParams specificParams
+    && and (List.zipWith moreGeneralFlow generalParams specificParams)
+  where
+    moreGeneralFlow (TypeFlow generalTy generalFlow)
+                    (TypeFlow specificTy specificFlow) =
+        generalFlow == specificFlow
+        && moreGeneral traitImpls generalDict specificDict generalTy specificTy
+moreGeneral _ _ _ _ _ = False
+
+
+-- |Return true if every param type in the first @CallInfo@ is strictly more general
+-- than that in the second @CallInfo@
+paramsMoreGeneral :: Map TraitImplSpec (Placed (Maybe ModSpec))
+                       -> (CallInfo, Typing) -> (CallInfo, Typing) -> Bool
+paramsMoreGeneral traitImpls general specific =
+    let generalTypes = callInfoTypes $ fst general
+        specificTypes = callInfoTypes $ fst specific
+        generalDict = tvarDict $ snd general
+        specificDict = tvarDict $ snd specific
+        compareTypes = List.zipWith
+            (moreGeneral traitImpls generalDict specificDict)
+    in sameLength generalTypes specificTypes
+        && and (compareTypes generalTypes specificTypes)
+        && not (and (List.zipWith
+            (moreGeneral traitImpls specificDict generalDict)
+            specificTypes generalTypes))
+  where
+    callInfoTypes FirstInfo{fiTypes=types} = types
+    callInfoTypes _ = []
+
+
+-- |Choose a unique candidate whose parameter types are strictly less general
+-- than every other candidate's parameter types
+mostSpecificMatch :: [(CallInfo, Typing)]
+                   -> Compiler (Maybe (CallInfo, Typing))
+mostSpecificMatch matches = do
+    traitImpls <- getModuleImplementationField modKnownTraitImpls
+    return $ case List.filter (mostSpecific traitImpls) matches of
+        [match] -> Just match
+        _ -> Nothing
+  where
+    mostSpecific traitImpls match =
+        all (\other -> sameMatch match other
+                    || paramsMoreGeneral traitImpls other match)
+            matches
+    sameMatch (FirstInfo{fiProc=left}, _)
+              (FirstInfo{fiProc=right}, _) = left == right
+    sameMatch _ _ = False
+
+
 overloadErr :: StmtTypings -> TypeError
 overloadErr StmtTypings{typingStmt=call,typingInfos=candidates} =
     -- XXX Need to give list of matching procs
@@ -2107,6 +2820,7 @@ modeCheckProcDecl pdef = do
     let name = procName pdef
     logTyped $ "Type checking " ++ showProcName name
     let proto = procProto pdef
+    let abstract = isJust $ procAbstract pdef
     let posParams = procProtoParams proto
     let params = content <$> posParams
     let resources = Set.fromList $ procProtoResources proto
@@ -2138,19 +2852,21 @@ modeCheckProcDecl pdef = do
     logTyped $ "Output resources    : "
                 ++ intercalate ", " (Set.toList outResources)
     let modeErrs =
-            [ReasonResourceUndef name res pos
-            | res <- Set.toList
-                    $ missingBindings outResources assigned]
+            [ReasonResourceUndef name res pos |
+               not abstract,
+               res <- Set.toList $ missingBindings outResources assigned]
             ++
-            [ReasonOutputUndef name param pos
-            | param <- Set.toList
-                        $ missingBindings outParams assigned]
+            [ReasonOutputUndef name param pos |
+               not abstract,
+               param <- Set.toList $ missingBindings outParams assigned]
             ++ detismCheck name pos detism (bindingDetism assigned)
     typeErrors modeErrs
     params' <- updateParamTypes posParams
     let proto' = proto { procProtoParams = params' }
+    let boundedTypeParams' = getBoundedTypeParams params'
     let pdef' = pdef { procProto = proto',
                         procTmpCount = tmpCount',
+                        procBoundedTypeParams = boundedTypeParams',
                         procImpln = ProcDefSrc def' }
     sccAgain <- (&& params' /= posParams) <$> validTyping
     logTyped $ "===== "
@@ -2233,7 +2949,9 @@ modecheckStmt final
     -- Find arg types and expand type variables
     (args', argStmts) <- modeCheckExps args
     assignedVars <- getsTy (Map.keysSet . typingDict)
-    infos <- lift $ callInfos assignedVars (maybePlace stmt pos) <&> typingInfos
+    infos <- lift $ do
+        callInfos' <- typingInfos <$> callInfos assignedVars (maybePlace stmt pos)
+        filterM (fmap not . lift . isDefaultTraitImpl) callInfos'
     actualTypes <- lift $ mapM (expType >=> ultimateType) args'
     logModed $ "    actual types     : " ++ show actualTypes
     actualModes <- mapM expMode args'
@@ -2253,16 +2971,10 @@ modecheckStmt final
         logModed $ "Exact mode matches: " ++ show exactMatches
         let stmt' = ProcCall (First cmod cname pid) d resourceful args'
         (argStmts ++) <$> case (exactMatches, modeMatches) of
-            ((match,typing):rest, _) -> do
-                lift $ put typing
-                unless (List.null rest) $
-                    modeError $ ReasonWarnMultipleMatches match (fst <$> rest) pos
-                finaliseCall resourceful final pos args' match stmt'
-            ([], (match,typing):rest) -> do
-                lift $ put typing
-                unless (List.null rest) $
-                    modeError $ ReasonWarnMultipleMatches match (fst <$> rest) pos
-                finaliseCall resourceful final pos args' match stmt'
+            (_:_, _) -> do
+                finaliseBestMatch resourceful final pos args' stmt' exactMatches
+            ([], _:_) -> do
+                finaliseBestMatch resourceful final pos args' stmt' modeMatches
             _ -> do
                 -- XXX handle case of !var for an input, with missing output arg
                 logModed $ "Checking for !arg in function call"
@@ -2622,6 +3334,24 @@ modecheckDisj final preRestores disjAssigned (stmt:stmts) = do
     (disj1':) <$> modecheckDisj final restores disjAssigned' stmts
 
 
+-- |Choose the best match from candidates and finalise the call
+finaliseBestMatch :: Bool -> Bool -> OptPos -> [Placed Exp] -> Stmt
+                  -> [(CallInfo, Typing)] -> Moded [Placed Stmt]
+finaliseBestMatch resourceful final pos args' stmt' matches = do
+    actualTypes <- lift $ mapM (expType >=> ultimateType) args'
+    matches' <- lift $ preferTraitMatches actualTypes matches
+    preferred <- lift2 $ mostSpecificMatch matches'
+    let ((match, typing), rest, warn) = case preferred of
+            Just selected ->
+                (selected, List.delete selected matches', False)
+            Nothing ->
+                (head matches', tail matches', True)
+    lift $ put typing
+    when (warn && not (List.null rest)) $
+        modeError $ ReasonWarnMultipleMatches match (fst <$> rest) pos
+    finaliseCall resourceful final pos args' match stmt'
+
+
 -- |Produce a typed statement sequence, the binding state, and final temp count
 -- from a single proc call.
 finaliseCall :: Bool -> Bool -> OptPos -> [Placed Exp]
@@ -2972,6 +3702,7 @@ checkProcDefFullytyped def = do
 
 procDefSrc :: ProcImpln -> [Placed Stmt]
 procDefSrc (ProcDefSrc def) = def
+procDefSrc ProcDefAbstract = shouldnt "procDefSrc applied to ProcDefAbstract"
 procDefSrc ProcDefPrim{} = shouldnt "procDefSrc applied to ProcDefPrim"
 
 
@@ -3060,6 +3791,12 @@ reportUntyped procname pos msg =
 -- |Log a message, if we are logging type checker activity.
 logTypes :: String -> Compiler ()
 logTypes = logMsg Types
+
+
+-- |Log a message, if we are logging type checker activity; used in Validator monad.
+logValidator :: String -> Validator ()
+logValidator = lift . logTypes
+
 
 -- |Log a message, if we are logging type checker activity; used in Typed monad.
 logTyped :: String -> Typed ()

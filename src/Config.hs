@@ -11,8 +11,8 @@
 module Config (sourceExtension, objectExtension, executableExtension,
                bitcodeExtension, assemblyExtension, nativeAssemblyExtension,
                archiveExtension, moduleDirectoryBasename, currentModuleAlias,
-               specialChar, specialName, specialName2, initProcName,
-               wordSize, wordSizeBytes, byteBits,
+               specialChar, specialSeparator, specialName, specialName2, initProcName,
+               vtableNamePrefix, adapterNamePostfix, wordSize, wordSizeBytes, byteBits,
                availableTagBits, tagMask, smallestAllocatedAddress,
                minimumSwitchCases, maximumSplitStructSize, magicVersion,
                linkerDeadStripArgs, removeLPVMSection,
@@ -86,6 +86,11 @@ specialChar :: Char
 specialChar = '#' -- note # is not allowed in backquoted strings
 
 
+-- | The special separator used for generated vtable symbols.
+specialSeparator :: String
+specialSeparator = "##"
+
+
 -- | Construct a name can't be a valid Wybe symbol from one user string.
 specialName :: String -> String
 specialName = (specialChar:)
@@ -99,6 +104,16 @@ specialName2 front back = front ++ specialChar:back
 -- |The proc to initialise each module (using the top-level code of the module)
 initProcName :: String
 initProcName = ""
+
+
+-- | Prefix used for generated vtable symbols.
+vtableNamePrefix :: String
+vtableNamePrefix = specialName "vtable"
+
+
+-- | Postfix used for generated adapter symbols.
+adapterNamePostfix :: String
+adapterNamePostfix = specialName "adapter"
 
 
 -- |Determining word size of the machine in bits

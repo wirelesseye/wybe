@@ -73,8 +73,10 @@ flattenProcBody pd _ = do
                 . List.concatMap keys . catMaybes
                 <$> mapM lookupResource resources
 
-    let ProcDefSrc body = procImpln pd
-
+    let body = case procImpln pd of
+                ProcDefSrc body -> body
+                ProcDefAbstract -> []
+                impl -> shouldnt $ "flattenProcBody ProcDefPrim " ++ show impl
         detism = procDetism pd
         inlining = procInlining pd
         impurity = procImpurity pd
