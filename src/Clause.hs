@@ -531,7 +531,8 @@ compileVTable :: VTableSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
 compileVTable vspec opmod = do
     logMsg Clause $ "Compiling vtable " ++ show vspec ++ " defined in " ++ show opmod
     thisMod <- getModuleSpec
-    traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs `inModule` fromMaybe thisMod opmod
+    traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs
+        `inModule` fromMaybe thisMod opmod
     let procSpecs = trustFromJust "compileVTable" $ Map.lookup vspec traitImplProcSpecs
     procSpecs' <- case opmod of
         Nothing -> adaptTraitImplProcs vspec procSpecs
@@ -542,14 +543,17 @@ compileVTable vspec opmod = do
                 (modTraitImplProcs imp) }
     let sz = wordSizeBytes * length procSpecs
         values = List.map FnPointerStructMember procSpecs'
-    case opmod of
-        Just mod -> do
-            ancestor <- isAncestorMod thisMod mod
-            if ancestor
-                then return Nothing -- Don't generate duplicated vtables in the same LLVM module
-                else Just <$> recordConstStruct (VTableInfo sz values True vspec mod) Nothing
-        Nothing -> Just <$> recordConstStruct (VTableInfo sz values False vspec thisMod) Nothing
-
+    nestedIn <- getModuleImplementationField modNestedIn
+    generate <- case nestedIn of
+        Just nestedIn -> do
+            interface <- getModuleInterface `inModule` nestedIn
+            return $ not . Map.member vspec $ traitImpls interface
+        Nothing -> return True
+    if generate
+        then case opmod of
+            Just mod -> Just <$> recordConstStruct (VTableInfo sz values True vspec mod) Nothing
+            Nothing -> Just <$> recordConstStruct (VTableInfo sz values False vspec thisMod) Nothing
+        else return Nothing
 
 -- |Return the procedure specs to store in a locally-defined vtable.  A concrete
 -- implementation can have a different ABI from the corresponding abstract

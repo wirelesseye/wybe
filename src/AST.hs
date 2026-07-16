@@ -109,7 +109,7 @@ module AST (
   optionallyPutStr, message, errmsg, warnmsg, (<!>), prettyPos,
   Message(..), queueMessage,
   genProcName, addImport, doImport, importFromSupermodule, publishTraitImpls,
-  isAncestorMod, lookupType, lookupType', typeIsUnique, 
+  lookupType, lookupType', typeIsUnique, 
   ResourceName, ResourceSpec(..), ResourceFlowSpec(..), PrimResourceImpln(..),
   initialisedResources, initialisedVisibleResources,
   addResource, lookupResourceSpec, lookupResource,
@@ -2121,17 +2121,6 @@ publishTraitImpls = do
     knownTraitImpls <- getModuleImplementationField modKnownTraitImpls
     let traitImpls = Map.map (fromMaybe thisMod . content) knownTraitImpls
     updateModInterface (\int -> int{ traitImpls=traitImpls })
-
-
--- |Check whether the second module is an ancestor module of the first:
--- an ancestor directly or indirectly contains the first module as a nested submodule.
-isAncestorMod :: ModSpec -> ModSpec -> Compiler Bool
-isAncestorMod mod ancestor = do
-    nestedIn <- getModuleImplementationField modNestedIn `inModule` mod
-    case nestedIn of
-        Just parent | parent == ancestor -> return True
-        Just parent -> isAncestorMod parent ancestor
-        Nothing -> return False 
 
 
 -- | Resolve a (possibly) relative module spec into an absolute one.  The
