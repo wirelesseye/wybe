@@ -550,9 +550,8 @@ compileVTable vspec opmod = do
             return $ not . Map.member vspec $ traitImpls interface
         Nothing -> return True
     if generate
-        then case opmod of
-            Just mod -> Just <$> recordConstStruct (VTableInfo sz values True vspec mod) Nothing
-            Nothing -> Just <$> recordConstStruct (VTableInfo sz values False vspec thisMod) Nothing
+        then Just <$> recordConstStruct
+            (VTableInfo sz values (isJust opmod) vspec (fromMaybe thisMod opmod)) Nothing
         else return Nothing
 
 -- |Return the procedure specs to store in a locally-defined vtable.  A concrete
