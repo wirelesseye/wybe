@@ -1663,9 +1663,9 @@ llvmValue (ArgGlobal val _) = llvmGlobalInfoName val
 llvmValue (ArgVTable info ty) = case info of
     Left vspec -> do
         knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
-        let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup vspec knownTraitImpls
+        let source = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup vspec knownTraitImpls
         thisMod <- lift getModuleSpec
-        let mod = fromMaybe thisMod opmod
+        let mod = traitImplDefiningMod thisMod source
         return $ llvmGlobalName $ llvmVTableName vspec mod
     Right var -> llvmValue $ ArgVar var ty FlowIn VTable False
 llvmValue (ArgConstRef structID ty) = do

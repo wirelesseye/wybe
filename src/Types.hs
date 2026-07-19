@@ -258,7 +258,67 @@ typeCheckModSCC scc = do
        ordered)
     errs <- concat <$> mapM typecheckProcSCC ordered
     traitErrs <- concat <$> mapM typecheckLocalTraitImpls scc
+    when (List.null errs && List.null traitErrs) $
+        mapM_ markNeededTraitImpls scc
     mapM_ (queueMessage . typeErrorMessage) (errs ++ traitErrs)
+
+
+-- |Mark the external trait implementations required by successful, final
+-- procedure typings in one module.
+markNeededTraitImpls :: ModSpec -> Compiler ()
+markNeededTraitImpls mod = do
+    reenterModule mod
+    defs <- concat . Map.elems <$> getModuleImplementationField modProcs
+    specs <- neededTraitImpls defs
+    updateModImplementation $ \imp -> imp {
+        modKnownTraitImpls = Set.foldl' markNeeded
+            (Map.map (fmap clearNeeded) $ modKnownTraitImpls imp) specs }
+    reexitModule
+  where
+    clearNeeded source@TraitImplExternal{} =
+        source { traitImplNeeded = False }
+    clearNeeded source = source
+    markNeeded impls ispec = Map.adjust (fmap needExternal) ispec impls
+    needExternal source@TraitImplExternal{} =
+        source { traitImplNeeded = True }
+    needExternal source = source
+
+
+-- |Return the concrete trait implementations whose vtables will be passed by
+-- fully type- and mode-checked calls.  Grouping by callee avoids repeatedly
+-- loading the same procedure definition in call-heavy modules.
+neededTraitImpls :: [ProcDef] -> Compiler (Set TraitImplSpec)
+neededTraitImpls defs = do
+    needed <- Map.traverseWithKey neededForCallee callsByCallee
+    return $ Set.unions $ Map.elems needed
+  where
+    callsByCallee = Map.fromListWith (++)
+        [(pspec, [args]) | (pspec, args) <- concatMap resolvedCalls defs]
+    neededForCallee pspec argLists = do
+        pdef <- getProcDef pspec
+        return $ Set.unions $ callNeededTraitImpls pdef <$> argLists
+
+
+resolvedCalls :: ProcDef -> [(ProcSpec, [Placed Exp])]
+resolvedCalls ProcDef{procImpln=ProcDefSrc body} =
+    foldStmts collectCall (const . const) [] body
+  where
+    collectCall found (ProcCall (First mod name (Just procID)) _ _ args) _ =
+        (ProcSpec mod name procID generalVersion, args) : found
+    collectCall found _ _ = found
+resolvedCalls _ = []
+
+
+callNeededTraitImpls :: ProcDef -> [Placed Exp] -> Set TraitImplSpec
+callNeededTraitImpls pdef args =
+    let params = procProtoParams $ procProto pdef
+        typeVarMap = getTypeVarMap params args
+        concreteImpl (name, trait) = case Map.lookup name typeVarMap of
+            Just TypeVariable{} -> Nothing
+            Just ty             -> Just $ TraitImplSpec trait ty
+            Nothing             -> Nothing
+    in Set.fromList $ Maybe.mapMaybe concreteImpl
+        (procBoundedTypeParams pdef)
 
 
 -- |Return the module, name, and defn of all procs in the specified module
@@ -1070,13 +1130,15 @@ mergeTypeVarBounds name ty1 ty2 = do
             Map.insert name (Right bounds) (tvarDict typing) }
 
 
+-- |Check that a concrete type satisfies each bound.
 unifyTypeVarBounds :: TypeError -> Set TraitSpec -> TypeSpec -> Typed TypeSpec
 unifyTypeVarBounds reason bounds ty = do
     knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
-    if all (\bound -> Map.member (TraitImplSpec bound ty) knownTraitImpls)
-            (Set.toList bounds)
+    let implSpecs = [TraitImplSpec bound ty | bound <- Set.toList bounds]
+    if all (`Map.member` knownTraitImpls) implSpecs
         then return ty
         else invalidTypeError reason
+
 
 invalidTypeError :: TypeError -> Typed TypeSpec
 invalidTypeError reason = typeError reason >> return InvalidType
@@ -1243,18 +1305,18 @@ typecheckLocalTraitImpls thisMod = do
     logMsg Types "Checking local trait impls:"
     traitImpls <- getModuleImplementationField modKnownTraitImpls
     traitImplProcs <- mapM (uncurry typecheckLocalTraitImpl)
-            $ Map.toList $ Map.filter (isNothing . content) traitImpls
+            $ Map.toList $ Map.filter (localTraitImpl . content) traitImpls
     logMsg Types $ "Local trait impls: " ++ show traitImplProcs
     updateModImplementation $ \imp -> imp { modTraitImplProcs = Map.fromList $ catOKs traitImplProcs }
     reexitModule
     return $ concatMap errList traitImplProcs
 
 
-typecheckLocalTraitImpl :: TraitImplSpec -> Placed (Maybe ModSpec)
+typecheckLocalTraitImpl :: TraitImplSpec -> Placed TraitImplSource
                         -> Compiler (MaybeErr (TraitImplSpec, [ProcSpec]))
-typecheckLocalTraitImpl ispec@(TraitImplSpec trait _) traitImpl = do
+typecheckLocalTraitImpl ispec@(TraitImplSpec trait _) source = do
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
-    let pos = place traitImpl
+    let pos = place source
     absProcs <- abstractProcs trait
     matched <- mapM (uncurry (typecheckTraitImplProc pos ispec)) absProcs
     let errs = concatMap errList matched
@@ -2726,7 +2788,7 @@ matchProcSignatures left right =
 
 
 -- |Return true if the first type accepts every value accepted by the second
-moreGeneral :: Map TraitImplSpec (Placed (Maybe ModSpec))
+moreGeneral :: Map TraitImplSpec (Placed TraitImplSource)
                 -> TypeVarDict -> TypeVarDict -> TypeSpec -> TypeSpec -> Bool
 moreGeneral _ _ _ general specific
     | general == specific = True
@@ -2763,7 +2825,7 @@ moreGeneral _ _ _ _ _ = False
 
 -- |Return true if every param type in the first @CallInfo@ is strictly more general
 -- than that in the second @CallInfo@
-paramsMoreGeneral :: Map TraitImplSpec (Placed (Maybe ModSpec))
+paramsMoreGeneral :: Map TraitImplSpec (Placed TraitImplSource)
                        -> (CallInfo, Typing) -> (CallInfo, Typing) -> Bool
 paramsMoreGeneral traitImpls general specific =
     let generalTypes = callInfoTypes $ fst general

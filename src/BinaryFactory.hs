@@ -76,6 +76,7 @@ instance Binary ModuleInterface
 instance Binary Pragma
 instance Binary StructID
 instance Binary TraitImplSpec
+instance Binary TraitImplSource
 
 instance Binary ProcModifiers
 instance Binary Inlining
