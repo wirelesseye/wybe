@@ -1,0 +1,8 @@
+pragma no_standard_library
+
+use wybe.bool
+
+trait
+
+abstract {test} (a:_ = b:_)
+abstract {test} (a:_ ~= b:_)
