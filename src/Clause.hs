@@ -526,9 +526,8 @@ compileLocalVTables :: ModSpec -> Compiler ()
 compileLocalVTables thisMod = do
     reenterModule thisMod
     traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
-    vTables <- Map.mapMaybe id <$>
-        Map.traverseWithKey (\vspec _ -> compileVTable vspec Nothing)
-            (Map.filter isNothing traitImpls)
+    vTables <- Map.traverseWithKey (\vspec _ -> compileVTable vspec Nothing)
+        (Map.filter isNothing traitImpls)
     updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
     reexitModule
 
@@ -551,14 +550,13 @@ compileExternalVTables thisMod = do
             Just Nothing -> impls
             Just (Just mod) -> Map.insert vspec mod impls
         externalImpls = Set.foldl' addReferenced Map.empty referenced
-    vTables <- Map.mapMaybe id <$>
-        Map.traverseWithKey (\vspec mod -> compileVTable vspec $ Just mod)
-            externalImpls
+    vTables <- Map.traverseWithKey (\vspec mod -> compileVTable vspec $ Just mod)
+        externalImpls
     updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
     reexitModule
 
 
-compileVTable :: TraitImplSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
+compileVTable :: TraitImplSpec -> Maybe ModSpec -> Compiler StructID
 compileVTable ispec opmod = do
     logMsg Clause $ "Compiling vtable for trait impl " ++ show ispec ++ " defined in " ++ show opmod
     thisMod <- getModuleSpec
@@ -574,16 +572,8 @@ compileVTable ispec opmod = do
                 (modTraitImplProcs imp) }
     let sz = wordSizeBytes * length procSpecs
         values = List.map FnPointerStructMember procSpecs'
-    nestedIn <- getModuleImplementationField modNestedIn
-    generate <- case nestedIn of
-        Just nestedIn -> do
-            interface <- getModuleInterface `inModule` nestedIn
-            return $ not . Map.member ispec $ traitImpls interface
-        Nothing -> return True
-    if generate
-        then Just <$> recordConstStruct
-            (VTableInfo sz values (isJust opmod) ispec (fromMaybe thisMod opmod)) Nothing
-        else return Nothing
+    recordConstStruct
+        (VTableInfo sz values (isJust opmod) ispec (fromMaybe thisMod opmod)) Nothing
 
 
 -- |Return the procedure specs to store in a locally-defined vtable.  A concrete
