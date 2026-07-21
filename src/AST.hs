@@ -23,8 +23,7 @@ module AST (
   determinismSeq, determinismProceding, determinismName, determinismCanFail,
   impurityName, impuritySeq, expectedImpurity,
   inliningName,
-  TraitSpec, TraitImplSpec(..), VTableSpec, TypeVarBound, TraitImplSource(..),
-  traitImplDefiningMod, localTraitImpl,
+  TraitSpec, TraitImplSpec(..), VTableSpec, TypeVarBound,
   TypeProto(..), TypeModifiers(..), TypeSpec(..), typeVarSet, TypeVarName(..),
   genericType, higherOrderType, isHigherOrder,
   isResourcefulHigherOrder, isTraitType, typeModule,
@@ -35,8 +34,7 @@ module AST (
   PrimProto(..), PrimParam(..), ParamInfo(..),
   Exp(..), StringVariant(..), GlobalInfo(..), Generator(..), Stmt(..), ProcFunctor(..),
   regularProc, regularModProc,
-  flattenedExpFlow, expIsVar, expIsConstant, expVar, expVar', maybeExpType,
-  getTypeVarMap, innerExp,
+  flattenedExpFlow, expIsVar, expIsConstant, expVar, expVar', maybeExpType, innerExp,
   setExpFlowType,
   TypeRepresentation(..), TypeFamily(..), typeFamily,
   defaultTypeRepresentation, typeRepSize, integerTypeRep, typeSize,
@@ -111,7 +109,7 @@ module AST (
   optionallyPutStr, message, errmsg, warnmsg, (<!>), prettyPos,
   Message(..), queueMessage,
   genProcName, addImport, doImport, importFromSupermodule, publishTraitImpls,
-  lookupType, lookupType', typeIsUnique,
+  lookupType, lookupType', typeIsUnique, 
   ResourceName, ResourceSpec(..), ResourceFlowSpec(..), PrimResourceImpln(..),
   initialisedResources, initialisedVisibleResources,
   addResource, lookupResourceSpec, lookupResource,
@@ -1405,10 +1403,10 @@ addProcDef procDef = do
     return spec
 
 
-addTraitImpl :: OptPos -> TraitImplSpec -> TraitImplSource -> Compiler ()
-addTraitImpl pos spec source = do
+addTraitImpl :: OptPos -> TraitImplSpec -> Maybe ModSpec -> Compiler ()
+addTraitImpl pos spec mod = do
     updateImplementation (\imp -> imp {
-        modKnownTraitImpls = Map.insert spec (maybePlace source pos) $ modKnownTraitImpls imp })
+        modKnownTraitImpls = Map.insert spec (maybePlace mod pos) $ modKnownTraitImpls imp })
 
 
 getParams :: ProcSpec -> Compiler [Param]
@@ -1846,10 +1844,12 @@ data ModuleImplementation = ModuleImplementation {
     modKnownResources :: Map Ident (Set ResourceSpec),
                                               -- ^Resources visible to this mod
     modKnownProcs:: Map Ident (Set ProcSpec), -- ^Procs visible to this module
-    modKnownTraitImpls :: Map TraitImplSpec (Placed TraitImplSource),
+    modKnownTraitImpls :: Map TraitImplSpec (Placed (Maybe ModSpec)),
       -- ^Trait impls visible to this module.  The `Placed` value always records
-      -- where the impl declaration was defined for error reporting;
-      -- `TraitImplSource` indicates whether the trait impl is external.
+      -- where the impl declaration was defined for error reporting.
+      -- `Maybe ModSpec` indicates whether the trait impl is external:
+      --   `Nothing` means the impl is defined in the current module (local)
+      --   `Just mod` means it is defined in another module (external)
     modTraitImplProcs :: Map TraitImplSpec [ProcSpec],
                                               -- Procs that satisfie trait impls
     modForeignObjects:: Set FilePath,         -- ^Foreign object files used
@@ -2048,7 +2048,7 @@ doImport phase mod (imports, _) = do
                             $ importsSelected allImports $ pubProcs fromIFace
     let importedTraitImpls
           | phase == AfterCompleteNormalisation =
-              Map.map (Unplaced . TraitImplExternal False) $ traitImpls fromIFace
+              Map.map (Unplaced . Just) $ traitImpls fromIFace
           | otherwise = Map.empty
     logAST $ "    importing types    : "
              ++ showModSpecs (snd <$> importedTypesAssoc)
@@ -2102,7 +2102,7 @@ importFromSupermodule phase modspec = do
     let knownResources =
             Map.unionWith Set.union (modKnownResources impl) kResources
     let knownProcs = Map.unionWith Set.union (modKnownProcs impl) kProcs
-    let importedTraitImpls = Map.map (fmap (TraitImplExternal False . traitImplDefiningMod modspec))
+    let importedTraitImpls = Map.map (fmap (Just . fromMaybe modspec))
             (modKnownTraitImpls impl)
         knownTraitImpls
           | phase == AfterCompleteNormalisation =
@@ -2119,7 +2119,7 @@ publishTraitImpls :: Compiler ()
 publishTraitImpls = do
     thisMod <- getModuleSpec
     knownTraitImpls <- getModuleImplementationField modKnownTraitImpls
-    let traitImpls = Map.map (traitImplDefiningMod thisMod . content) knownTraitImpls
+    let traitImpls = Map.map (fromMaybe thisMod . content) knownTraitImpls
     updateModInterface (\int -> int{ traitImpls=traitImpls })
 
 
@@ -3608,32 +3608,6 @@ maybeExpType :: Exp -> Maybe TypeSpec
 maybeExpType (Typed _ ty _) = Just ty
 maybeExpType _              = Nothing
 
-
--- |Map a procedure's type variables to the corresponding actual call types.
-getTypeVarMap :: [Placed Param] -> [Placed Exp] -> Map TypeVarName TypeSpec
-getTypeVarMap _ [] = Map.empty
-getTypeVarMap params@(x:xs) args@(y:ys) =
-    case (content x, content y) of
-        (Param _ paramType _ _, Typed _ argType _) ->
-            getTypeVarMap' paramType argType `Map.union` getTypeVarMap xs ys
-        _ -> getTypeVarMap xs ys
-getTypeVarMap params args =
-    shouldnt $ "getTypeVarMap " ++ show params ++ show args
-
-
-getTypeVarMap' :: TypeSpec -> TypeSpec -> Map TypeVarName TypeSpec
-getTypeVarMap' TypeVariable{typeVariableName=name} actual =
-    Map.singleton name actual
-getTypeVarMap' TypeSpec{typeParams=formals} TypeSpec{typeParams=actuals} =
-    Map.unions $ zipWith getTypeVarMap' formals actuals
-getTypeVarMap' HigherOrderType{higherTypeParams=formals}
-        HigherOrderType{higherTypeParams=actuals} =
-    Map.unions $ zipWith matchTypeFlows formals actuals
-  where
-    matchTypeFlows formal actual =
-        getTypeVarMap' (typeFlowType formal) $ typeFlowType actual
-getTypeVarMap' _ _ = Map.empty
-
 -- | Extract the inner expression (removing any Typed wrapper)
 innerExp :: Exp -> Exp
 innerExp (Typed exp _ _) = innerExp exp
@@ -3776,7 +3750,7 @@ data PrimArg
      | ArgClosure ProcSpec [PrimArg] TypeSpec  -- ^Closure, with closed args
      | ArgGlobal GlobalInfo TypeSpec           -- ^Constant global reference
      | ArgVTable (Either VTableSpec PrimVarName) TypeSpec
-                                               -- ^Ref to vtable (either global or proc-local)
+                                               -- ^Ref to vtable (either global or local)
      | ArgConstRef StructID TypeSpec           -- ^Ref to constant memory block
      | ArgUnneeded PrimFlow TypeSpec           -- ^Unneeded input or output
      | ArgUndef TypeSpec                       -- ^Undefined variable, used
@@ -3800,30 +3774,6 @@ type VTableSpec = TraitImplSpec
 
 -- |A type variable together with the trait it is required to implement.
 type TypeVarBound = (TypeVarName, TraitSpec)
-
--- |Describes where a known trait implementation is defined.
-data TraitImplSource
-    = TraitImplLocal                     -- ^Defined in the current module.
-    -- |Defined in another module.
-    | TraitImplExternal {
-        traitImplNeeded :: Bool,         -- ^Whether this module needs its vtable.
-        traitImplMod    :: ModSpec       -- ^The module defining the implementation.
-    }
-      deriving (Eq,Ord,Generic)
-
-
--- |Return the module defining a trait implementation, using the supplied module
--- for a local implementation.
-traitImplDefiningMod :: ModSpec -> TraitImplSource -> ModSpec
-traitImplDefiningMod _ source@TraitImplExternal{traitImplMod=mod} = mod
-traitImplDefiningMod mod TraitImplLocal = mod
-
-
--- |Return whether an implementation is defined in the current module.
-localTraitImpl :: TraitImplSource -> Bool
-localTraitImpl TraitImplLocal = True
-localTraitImpl _ = False
-
 
 -- | The contents of a constant memory block.
 data StructInfo

@@ -181,7 +181,8 @@ define external fastcc i64 @"trait_basic_speaker#.speak<0>"(i64 %"x##0", ptr %"#
                     trait_external_vtable_nested_module.wrapper.wrapper<0>
                     trait_external_vtable_nested_module.wrapper.~=<0>
   constants       : 0:: CStringInfo {cstringChars = "Rex"}
-                    1:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"Rex"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_basic_dog.speak#adapter<0>], vtableExternal = True, vtableSpec = trait_basic_dog <: trait_basic_speaker, vtableMod = ["trait_basic_dog"]}
+                    2:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"Rex"]}
   imports         : use trait_basic_dog
                     use trait_basic_speaker
                     public use trait_external_vtable_nested_module.wrapper
@@ -212,15 +213,17 @@ target triple   = ????
 @"trait_basic_dog#constant#0" = private unnamed_addr constant [ ?? x i8 ] c" says woof\00", align 8
 @"trait_basic_dog#constant#2" = private unnamed_addr constant {i64, ptr} { i64 10, ptr @"trait_basic_dog#constant#0" }, align 8
 @"trait_external_vtable_nested_module#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"Rex\00", align 8
-@"trait_external_vtable_nested_module#constant#1" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_external_vtable_nested_module#constant#0" }, align 8
+@"#vtable##trait_basic_speaker##trait_basic_dog##trait_basic_dog#" = external unnamed_addr constant {ptr}, align 8
+@"trait_external_vtable_nested_module#constant#2" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_external_vtable_nested_module#constant#0" }, align 8
 
+declare external fastcc i64 @"trait_basic_dog#.speak#adapter<0>"(i64)
 declare external fastcc i64 @"wybe#.string#.,,<0>"(i64, i64)
 declare external fastcc void @"wybe#.string#.print<0>"(i64)
 declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_external_vtable_nested_module#.<0>"() {
-  %"tmp#0##0" = tail call fastcc i64 @"wybe#.string#.,,<0>"(i64 ptrtoint( ptr @"trait_external_vtable_nested_module#constant#1" to i64 ), i64 ptrtoint( ptr @"trait_basic_dog#constant#2" to i64 ))
+  %"tmp#0##0" = tail call fastcc i64 @"wybe#.string#.,,<0>"(i64 ptrtoint( ptr @"trait_external_vtable_nested_module#constant#2" to i64 ), i64 ptrtoint( ptr @"trait_basic_dog#constant#2" to i64 ))
   tail call fastcc void @"wybe#.string#.print<0>"(i64 %"tmp#0##0")
   call ccc void @putchar(i8 10)
   ret void

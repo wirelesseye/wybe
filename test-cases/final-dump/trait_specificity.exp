@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_specificity.<0>
-  constants       : 
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_specificity_scalar.render#adapter<0>], vtableExternal = True, vtableSpec = trait_specificity_scalar <: trait_specificity_printable, vtableMod = ["trait_specificity_scalar"]}
   imports         : use trait_specificity_printable
                     use trait_specificity_scalar
                     use wybe
@@ -35,7 +35,9 @@ module top-level code > public {semipure} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_specificity.wybe"
 target triple   = ????
 
+@"#vtable##trait_specificity_printable##trait_specificity_scalar##trait_specificity_scalar#" = external unnamed_addr constant {ptr}, align 8
 
+declare external fastcc i64 @"trait_specificity_scalar#.render#adapter<0>"(i64)
 declare external fastcc i64 @"trait_specificity_scalar#.render<0>"(i64)
 declare external fastcc void @"wybe#.string#.print<0>[410bae77d3]"(i64)
 declare external ccc void @putchar(i8)

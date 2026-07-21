@@ -360,6 +360,29 @@ compileSimpleStmt' stmt =
     shouldnt $ "Normalisation left complex statement:\n" ++ showStmt 4 stmt
 
 
+-- | Get a mapping from the type variable names to the argument types in a proc call
+getTypeVarMap :: [Placed Param] -> [Placed Exp] -> Map TypeVarName TypeSpec
+getTypeVarMap _ [] = Map.empty
+getTypeVarMap params@(x:xs) args@(y:ys) =
+    case (content x, content y) of
+        (Param _ paramType _ _, Typed _ argType _) ->
+            getTypeVarMap' paramType argType `Map.union` getTypeVarMap xs ys
+        _ -> getTypeVarMap xs ys
+getTypeVarMap params args = shouldnt $ "getTypeVariableMap " ++ show params ++ show args
+
+getTypeVarMap' :: TypeSpec -> TypeSpec -> Map TypeVarName TypeSpec
+getTypeVarMap' TypeVariable{typeVariableName=name} actual = Map.singleton name actual
+getTypeVarMap' TypeSpec{typeParams=formals} TypeSpec{typeParams=actuals} =
+    List.foldl' Map.union Map.empty $ zipWith getTypeVarMap' formals actuals
+getTypeVarMap' HigherOrderType{higherTypeParams=formals}
+           HigherOrderType{higherTypeParams=actuals} =
+    List.foldl' Map.union Map.empty $ zipWith matchTypeFlows formals actuals
+  where
+    matchTypeFlows formal actual =
+        getTypeVarMap' (typeFlowType formal) (typeFlowType actual)
+getTypeVarMap' _ _ = Map.empty
+
+
 compileVTableArg :: Map TypeVarName TypeSpec -> TypeVarBound -> ClauseComp PrimArg
 compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
     let argType = trustFromJust "compileVTableArg" $ Map.lookup paramVarName typeVarMap
@@ -499,36 +522,24 @@ compileTraitImpls :: ModSpec -> Compiler ()
 compileTraitImpls thisMod = do
     reenterModule thisMod
     traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
-    vTables <- Map.mapMaybe id <$> Map.traverseWithKey generateVTable traitImpls
+    vTables <- Map.mapMaybe id <$> Map.traverseWithKey compileVTable traitImpls
     updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
     reexitModule
 
 
-generateVTable :: TraitImplSpec -> TraitImplSource -> Compiler (Maybe StructID)
-generateVTable ispec TraitImplLocal = do
-    logMsg Clause $ "Compiling local vtable definition " ++ show ispec
-    generateVTable' ispec Nothing
-generateVTable ispec TraitImplExternal{traitImplNeeded=needed, traitImplMod=mod} =
-    if needed
-        then do
-            logMsg Clause $ "Compiling external vtable " ++ show ispec ++ " defined in " ++ showModSpec mod
-            generateVTable' ispec (Just mod)
-        else do
-            logMsg Clause $ "Skipping unneeded external vtable " ++ show ispec ++ " defined in " ++ showModSpec mod
-            return Nothing
-
-generateVTable' :: TraitImplSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
-generateVTable' ispec opmod = do
+compileVTable :: VTableSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
+compileVTable vspec opmod = do
+    logMsg Clause $ "Compiling vtable " ++ show vspec ++ " defined in " ++ show opmod
     thisMod <- getModuleSpec
     traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs
         `inModule` fromMaybe thisMod opmod
-    let procSpecs = trustFromJust "compileVTable" $ Map.lookup ispec traitImplProcSpecs
+    let procSpecs = trustFromJust "compileVTable" $ Map.lookup vspec traitImplProcSpecs
     procSpecs' <- case opmod of
-        Nothing -> adaptTraitImplProcs ispec procSpecs
+        Nothing -> adaptTraitImplProcs vspec procSpecs
         Just _  -> return procSpecs
     when (isNothing opmod && procSpecs' /= procSpecs) $
         updateModImplementation $ \imp -> imp {
-            modTraitImplProcs = Map.insert ispec procSpecs'
+            modTraitImplProcs = Map.insert vspec procSpecs'
                 (modTraitImplProcs imp) }
     let sz = wordSizeBytes * length procSpecs
         values = List.map FnPointerStructMember procSpecs'
@@ -536,11 +547,11 @@ generateVTable' ispec opmod = do
     generate <- case nestedIn of
         Just nestedIn -> do
             interface <- getModuleInterface `inModule` nestedIn
-            return $ not . Map.member ispec $ traitImpls interface
+            return $ not . Map.member vspec $ traitImpls interface
         Nothing -> return True
     if generate
         then Just <$> recordConstStruct
-            (VTableInfo sz values (isJust opmod) ispec (fromMaybe thisMod opmod)) Nothing
+            (VTableInfo sz values (isJust opmod) vspec (fromMaybe thisMod opmod)) Nothing
         else return Nothing
 
 -- |Return the procedure specs to store in a locally-defined vtable.  A concrete
