@@ -6,7 +6,8 @@
 --           : LICENSE in the root directory of this project.
 
 
-module Clause (compileProc, compileTraitImpls) where
+module Clause (compileProc, compileLocalVTables,
+               compileExternalVTables) where
 
 import           AST
 import           Control.Monad
@@ -518,28 +519,58 @@ vtableParamsFor bounds =
     [vtableParam i | (i, _) <- zip [0..] bounds]
 
 
-compileTraitImpls :: ModSpec -> Compiler ()
-compileTraitImpls thisMod = do
+-- |Compile all locally-defined trait vtables.  This must happen before clause
+-- compilation because adapting a concrete implementation to the trait ABI can
+-- add adapter procedures to the current module.
+compileLocalVTables :: ModSpec -> Compiler ()
+compileLocalVTables thisMod = do
     reenterModule thisMod
     traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
-    vTables <- Map.mapMaybe id <$> Map.traverseWithKey compileVTable traitImpls
+    vTables <- Map.mapMaybe id <$>
+        Map.traverseWithKey (\vspec _ -> compileVTable vspec Nothing)
+            (Map.filter isNothing traitImpls)
     updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
     reexitModule
 
 
-compileVTable :: VTableSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
-compileVTable vspec opmod = do
-    logMsg Clause $ "Compiling vtable " ++ show vspec ++ " defined in " ++ show opmod
+-- |Compile declarations for the external vtables actually referenced by the
+-- module's lowered code.
+compileExternalVTables :: ModSpec -> Compiler ()
+compileExternalVTables thisMod = do
+    reenterModule thisMod
+    defs <- concat . Map.elems <$> getModuleImplementationField modProcs
+    let bodies = concatMap allProcBodies defs
+        referenced = execState
+            (mapM_ (mapLPVMBodyM (const $ return ()) collectVTable) bodies)
+            Set.empty
+        collectVTable (ArgVTable (Left vspec) _) = modify $ Set.insert vspec
+        collectVTable _ = return ()
+    traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
+    let addReferenced impls vspec = case Map.lookup vspec traitImpls of
+            Nothing -> shouldnt $ "unknown referenced vtable " ++ show vspec
+            Just Nothing -> impls
+            Just (Just mod) -> Map.insert vspec mod impls
+        externalImpls = Set.foldl' addReferenced Map.empty referenced
+    vTables <- Map.mapMaybe id <$>
+        Map.traverseWithKey (\vspec mod -> compileVTable vspec $ Just mod)
+            externalImpls
+    updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
+    reexitModule
+
+
+compileVTable :: TraitImplSpec -> Maybe ModSpec -> Compiler (Maybe StructID)
+compileVTable ispec opmod = do
+    logMsg Clause $ "Compiling vtable for trait impl " ++ show ispec ++ " defined in " ++ show opmod
     thisMod <- getModuleSpec
     traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs
         `inModule` fromMaybe thisMod opmod
-    let procSpecs = trustFromJust "compileVTable" $ Map.lookup vspec traitImplProcSpecs
+    let procSpecs = trustFromJust "compileVTable" $ Map.lookup ispec traitImplProcSpecs
     procSpecs' <- case opmod of
-        Nothing -> adaptTraitImplProcs vspec procSpecs
+        Nothing -> adaptTraitImplProcs ispec procSpecs
         Just _  -> return procSpecs
     when (isNothing opmod && procSpecs' /= procSpecs) $
         updateModImplementation $ \imp -> imp {
-            modTraitImplProcs = Map.insert vspec procSpecs'
+            modTraitImplProcs = Map.insert ispec procSpecs'
                 (modTraitImplProcs imp) }
     let sz = wordSizeBytes * length procSpecs
         values = List.map FnPointerStructMember procSpecs'
@@ -547,12 +578,13 @@ compileVTable vspec opmod = do
     generate <- case nestedIn of
         Just nestedIn -> do
             interface <- getModuleInterface `inModule` nestedIn
-            return $ not . Map.member vspec $ traitImpls interface
+            return $ not . Map.member ispec $ traitImpls interface
         Nothing -> return True
     if generate
         then Just <$> recordConstStruct
-            (VTableInfo sz values (isJust opmod) vspec (fromMaybe thisMod opmod)) Nothing
+            (VTableInfo sz values (isJust opmod) ispec (fromMaybe thisMod opmod)) Nothing
         else return Nothing
+
 
 -- |Return the procedure specs to store in a locally-defined vtable.  A concrete
 -- implementation can have a different ABI from the corresponding abstract

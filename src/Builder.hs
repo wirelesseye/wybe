@@ -195,7 +195,8 @@ import           Analysis
 import           AST
 import           ASTShow                   (logDump, logDumpWith)
 import           Callers                   (collectCallers)
-import           Clause                    (compileProc, compileTraitImpls)
+import           Clause                    (compileProc, compileLocalVTables,
+                                            compileExternalVTables)
 import           Config
 import           Control.Monad
 import           Control.Monad.Extra
@@ -837,10 +838,14 @@ compileModSCC mspecs = do
     logDump Unbranch Clause "UNBRANCHING"
     -- AST manipulation before this line
     ----------------------------------
-    -- VTABLE GENERATION
-    mapM_ compileTraitImpls mspecs
+    -- LOCAL VTABLE GENERATION
+    -- This can add ABI adapter procedures, so it must precede clause generation.
+    mapM_ compileLocalVTables mspecs
     -- CLAUSE GENERATION
     mapM_ (transformModuleProcs compileProc) mspecs
+    -- EXTERNAL VTABLE GENERATION
+    -- Lowered ArgVTable references are the authoritative demand information.
+    mapM_ compileExternalVTables mspecs
     -- LPVM from here
     stopOnError $ "generating low level code in " ++ showModSpecs mspecs
     mapM_ collectCallers mspecs
