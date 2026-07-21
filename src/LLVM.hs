@@ -359,11 +359,22 @@ recordConst spec = do
     when new $ do
         info <- lift (lookupConstInfo spec)
         case info of
-            Just info@VTableInfo{vtableSpec=vspec} -> do
-                exist <- gets (Set.member vspec . allVTables)
-                unless exist $ do
-                    modify $ \s -> s {allConsts=Set.insert spec $ allConsts s
-                                    ,allVTables=Set.insert vspec $ allVTables s}
+            Just info@VTableInfo{vtableSpec=vspec,vtableExternal=external} -> do
+                previous <- gets $ Map.lookup vspec . allVTables
+                replace <- case previous of
+                    Nothing -> return True
+                    Just previousSpec
+                        | external -> return False
+                        | otherwise -> do
+                            previousInfo <- lift $ lookupConstInfo previousSpec
+                            return $ case previousInfo of
+                                Just VTableInfo{vtableExternal=True} -> True
+                                _ -> False
+                when replace $ do
+                    modify $ \s -> s {
+                        allConsts = Set.insert spec
+                            $ maybe id Set.delete previous $ allConsts s,
+                        allVTables = Map.insert vspec spec $ allVTables s }
                     recordConstParts info
             _ -> do
                 modify $ \s -> s {allConsts=Set.insert spec $ allConsts s}
@@ -2021,9 +2032,9 @@ data LLVMState = LLVMState {
                                      -- ^ Static constants appearing in module
         allExterns :: Map String ExternSpec,
                                     -- ^ Extern declarations needed by module
-        allVTables :: Set VTableSpec,
-                                    -- ^ VTable definitions/declarations needed
-                                    -- by the module
+        allVTables :: Map VTableSpec StructID,
+                                    -- ^ Preferred vtable constant for each spec;
+                                    -- local definitions supersede declarations
         fileHandle :: Handle,       -- ^ The file handle we're writing to
         -- These values apply to the single proc being translated
         tmpCounter :: Int,          -- ^ Next temp var to make for current proc
@@ -2051,7 +2062,7 @@ data LLVMState = LLVMState {
 
 -- | Set up LLVM monad to translate a module into the given file handle
 initLLVMState :: Handle -> LLVMState
-initLLVMState h = LLVMState Set.empty Map.empty Set.empty h 0 0 Set.empty
+initLLVMState h = LLVMState Set.empty Map.empty Map.empty h 0 0 Set.empty
                      Map.empty Map.empty Nothing Map.empty Map.empty False
 
 

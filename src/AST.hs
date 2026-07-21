@@ -2106,7 +2106,7 @@ importFromSupermodule phase modspec = do
             (modKnownTraitImpls impl)
         knownTraitImpls
           | phase == AfterCompleteNormalisation =
-              Map.union importedTraitImpls kTraitImpls
+              Map.union kTraitImpls importedTraitImpls
           | otherwise = kTraitImpls
     updateModImplementation (\imp -> imp { modKnownTypes = knownTypes,
                                            modKnownResources = knownResources,
