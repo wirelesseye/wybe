@@ -50,6 +50,7 @@ AFTER BUILDING MAIN:
                     use wybe.count32
                     use wybe.count64
                     use wybe.count8
+                    use wybe.eq
                     use wybe.float
                     use wybe.int
                     use wybe.int16
@@ -588,6 +589,7 @@ AFTER EVERYTHING:
                     use wybe.count32
                     use wybe.count64
                     use wybe.count8
+                    use wybe.eq
                     use wybe.float
                     use wybe.int
                     use wybe.int16

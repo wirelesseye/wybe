@@ -2048,14 +2048,16 @@ typecheckCalls' forceFirst (stmtTyping@(StmtTypings pstmt typs):calls)
 -- candidate supplies the trait constraint needed by the inferred signature.
 preferTraitMatches :: [TypeSpec] -> [(CallInfo, Typing)]
                             -> Typed [(CallInfo, Typing)]
-preferTraitMatches actualTypes matches = do
-    inferredParamVars <- currentInferredParamVars
-    if Set.null inferredParamVars
-    then return matches
-    else do
-        traitMatches <- filterM
-            (isBoundedTraitCandidate inferredParamVars) matches
-        return $ if List.null traitMatches then matches else traitMatches
+preferTraitMatches actualTypes matches
+    | any (isMove . fst) matches = return matches
+    | otherwise = do
+        inferredParamVars <- currentInferredParamVars
+        if Set.null inferredParamVars
+        then return matches
+        else do
+            traitMatches <- filterM
+                (isBoundedTraitCandidate inferredParamVars) matches
+            return $ if List.null traitMatches then matches else traitMatches
   where
     isBoundedTraitCandidate inferredVars
                             (FirstInfo{fiPartial=False}, typing) =
