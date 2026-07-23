@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_abstract_proc_dispatch.<0>
   constants       : 0:: CStringInfo {cstringChars = "value "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_abstract_proc_dispatch.print_value#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_abstract_proc_dispatch.printable, vtableMod = ["trait_abstract_proc_dispatch"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_abstract_proc_dispatch.print_value#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_abstract_proc_dispatch.printable, vtableMod = ["trait_abstract_proc_dispatch"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 6 8,PointerStructMember c"value "]}
   imports         : use trait_abstract_proc_dispatch.printable
                     use wybe
@@ -60,7 +60,7 @@ source_filename = "!ROOT!/final-dump/trait_abstract_proc_dispatch.wybe"
 target triple   = ????
 
 @"trait_abstract_proc_dispatch#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"value \00", align 8
-@"#vtable##trait_abstract_proc_dispatch#.printable##wybe#.int##trait_abstract_proc_dispatch#" = unnamed_addr constant {ptr} { ptr @"trait_abstract_proc_dispatch#.print_value#adapter<0>" }, align 8
+@"trait_abstract_proc_dispatch##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_abstract_proc_dispatch#.print_value#adapter<0>" }, align 8
 @"trait_abstract_proc_dispatch#constant#2" = private unnamed_addr constant {i64, ptr} { i64 6, ptr @"trait_abstract_proc_dispatch#constant#0" }, align 8
 
 declare external fastcc i64 @"wybe#.int#.fmt<2>"(i64, i64, i8)
@@ -70,7 +70,7 @@ declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_abstract_proc_dispatch#.<0>"() {
-  tail call fastcc void @"trait_abstract_proc_dispatch#.printable#.print_value<0>"(i64 42, ptr @"#vtable##trait_abstract_proc_dispatch#.printable##wybe#.int##trait_abstract_proc_dispatch#")
+  tail call fastcc void @"trait_abstract_proc_dispatch#.printable#.print_value<0>"(i64 42, ptr @"trait_abstract_proc_dispatch##vtable#0")
   ret void
 }
 

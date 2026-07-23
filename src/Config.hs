@@ -11,7 +11,7 @@
 module Config (sourceExtension, objectExtension, executableExtension,
                bitcodeExtension, assemblyExtension, nativeAssemblyExtension,
                archiveExtension, moduleDirectoryBasename, currentModuleAlias,
-               specialChar, specialSeparator, specialName, specialName2, initProcName,
+               specialChar, specialName, specialName2, initProcName,
                vtableNamePrefix, adapterNamePostfix, wordSize, wordSizeBytes, byteBits,
                availableTagBits, tagMask, smallestAllocatedAddress,
                minimumSwitchCases, maximumSplitStructSize, magicVersion,
@@ -84,11 +84,6 @@ currentModuleAlias = "_"
 -- character in an identifier.
 specialChar :: Char
 specialChar = '#' -- note # is not allowed in backquoted strings
-
-
--- | The special separator used for generated vtable symbols.
-specialSeparator :: String
-specialSeparator = "##"
 
 
 -- | Construct a name can't be a valid Wybe symbol from one user string.

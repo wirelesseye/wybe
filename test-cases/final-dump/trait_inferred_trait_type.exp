@@ -8,8 +8,8 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_inferred_trait_type.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<0>], vtableExternal = False, vtableSpec = wybe.float <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"]}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<1>], vtableExternal = False, vtableSpec = wybe.int <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = wybe.int <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"]}
   imports         : use trait_inferred_trait_type.my_trait
                     use wybe
   resources       : 
@@ -74,8 +74,8 @@ my_method#adapter(x##0:Type0<:trait_inferred_trait_type.my_trait, ?#result##0:Ty
 source_filename = "!ROOT!/final-dump/trait_inferred_trait_type.wybe"
 target triple   = ????
 
-@"#vtable##trait_inferred_trait_type#.my_trait##wybe#.float##trait_inferred_trait_type#" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<0>" }, align 8
-@"#vtable##trait_inferred_trait_type#.my_trait##wybe#.int##trait_inferred_trait_type#" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<1>" }, align 8
+@"trait_inferred_trait_type##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<0>" }, align 8
+@"trait_inferred_trait_type##vtable#1" = unnamed_addr constant {ptr} { ptr @"trait_inferred_trait_type#.my_method#adapter<1>" }, align 8
 
 declare external ccc void @print_float(double)
 declare external ccc void @print_int(i64)
@@ -83,10 +83,10 @@ declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_inferred_trait_type#.<0>"() {
-  %"tmp#0##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 1, ptr @"#vtable##trait_inferred_trait_type#.my_trait##wybe#.int##trait_inferred_trait_type#")
+  %"tmp#0##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 1, ptr @"trait_inferred_trait_type##vtable#1")
   call ccc void @print_int(i64 %"tmp#0##0")
   call ccc void @putchar(i8 10)
-  %"tmp#14##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 bitcast( double 3.14 to i64 ), ptr @"#vtable##trait_inferred_trait_type#.my_trait##wybe#.float##trait_inferred_trait_type#")
+  %"tmp#14##0" = tail call fastcc i64 @"trait_inferred_trait_type#.my_trait#.my_method<0>"(i64 bitcast( double 3.14 to i64 ), ptr @"trait_inferred_trait_type##vtable#0")
   %"tmp#1##0" = bitcast i64 %"tmp#14##0" to double
   call ccc void @print_float(double %"tmp#1##0")
   call ccc void @putchar(i8 10)

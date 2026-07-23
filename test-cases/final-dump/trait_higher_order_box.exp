@@ -14,7 +14,7 @@ AFTER EVERYTHING:
                     trait_higher_order_box.trait_higher_order_box<0>
                     trait_higher_order_box.trait_higher_order_box<1>
                     trait_higher_order_box.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_higher_order_box.apply_to_self#adapter<0>], vtableExternal = False, vtableSpec = trait_higher_order_box <: trait_higher_order_mapper, vtableMod = ["trait_higher_order_box"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_higher_order_box.apply_to_self#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_higher_order_box <: trait_higher_order_mapper, vtableMod = ["trait_higher_order_box"]}
   imports         : use trait_higher_order_mapper
                     use wybe
   resources       : 
@@ -90,7 +90,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_higher_order_box.wybe"
 target triple   = ????
 
-@"#vtable##trait_higher_order_mapper##trait_higher_order_box##trait_higher_order_box#" = unnamed_addr constant {ptr} { ptr @"trait_higher_order_box#.apply_to_self#adapter<0>" }, align 8
+@"trait_higher_order_box##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_higher_order_box#.apply_to_self#adapter<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 

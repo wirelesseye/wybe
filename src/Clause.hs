@@ -396,8 +396,8 @@ compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
             return $ ArgVTable (Right $ primParamName param)
                 (Representation CPointer)
         _ -> do
-            let vspec = TraitImplSpec paramVarBound argType
-            return $ ArgVTable (Left vspec) (Representation CPointer)
+            let ispec = TraitImplSpec paramVarBound argType
+            return $ ArgVTable (Left ispec) (Representation CPointer)
 
 compileFlowArg :: FlowDirection -> Exp -> OptPos -> ClauseComp [PrimArg]
 compileFlowArg flow (Typed exp typ coerce) pos = do
@@ -526,8 +526,12 @@ compileLocalVTables :: ModSpec -> Compiler ()
 compileLocalVTables thisMod = do
     reenterModule thisMod
     traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
-    vTables <- Map.traverseWithKey (\vspec _ -> compileVTable vspec Nothing)
-        (Map.filter isNothing traitImpls)
+    let localImpls = Map.toAscList $ Map.filter isNothing traitImpls
+    vTables <- Map.fromAscList <$> mapM
+        (\(index, (ispec, _)) -> do
+            vtable <- compileVTable index ispec Nothing
+            return (ispec, vtable))
+        (zip [0..] localImpls)
     updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
     reexitModule
 
@@ -542,22 +546,29 @@ compileExternalVTables thisMod = do
         referenced = execState
             (mapM_ (mapLPVMBodyM (const $ return ()) collectVTable) bodies)
             Set.empty
-        collectVTable (ArgVTable (Left vspec) _) = modify $ Set.insert vspec
+        collectVTable (ArgVTable (Left ispec) _) = modify $ Set.insert ispec
         collectVTable _ = return ()
     traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
-    let addReferenced impls vspec = case Map.lookup vspec traitImpls of
-            Nothing -> shouldnt $ "unknown referenced vtable " ++ show vspec
+    let addReferenced impls ispec = case Map.lookup ispec traitImpls of
+            Nothing -> shouldnt $ "unknown referenced vtable " ++ show ispec
             Just Nothing -> impls
-            Just (Just mod) -> Map.insert vspec mod impls
+            Just (Just mod) -> Map.insert ispec mod impls
         externalImpls = Set.foldl' addReferenced Map.empty referenced
-    vTables <- Map.traverseWithKey (\vspec mod -> compileVTable vspec $ Just mod)
+    vTables <- Map.traverseWithKey
+        (\ispec mod -> do
+            definingVTables <- getModule modVTables `inModule` mod
+            let (index, _) = trustFromJust
+                    ("compileExternalVTables: missing vtable " ++ show ispec
+                        ++ " in " ++ showModSpec mod)
+                    (Map.lookup ispec definingVTables)
+            compileVTable index ispec $ Just mod)
         externalImpls
     updateModule (\mod -> mod{ modVTables = Map.union vTables $ modVTables mod })
     reexitModule
 
 
-compileVTable :: TraitImplSpec -> Maybe ModSpec -> Compiler StructID
-compileVTable ispec opmod = do
+compileVTable :: Int -> TraitImplSpec -> Maybe ModSpec -> Compiler (Int, StructID)
+compileVTable index ispec opmod = do
     logMsg Clause $ "Compiling vtable for trait impl " ++ show ispec ++ " defined in " ++ show opmod
     thisMod <- getModuleSpec
     traitImplProcSpecs <- getModuleImplementationField modTraitImplProcs
@@ -572,8 +583,9 @@ compileVTable ispec opmod = do
                 (modTraitImplProcs imp) }
     let sz = wordSizeBytes * length procSpecs
         values = List.map FnPointerStructMember procSpecs'
-    recordConstStruct
-        (VTableInfo sz values (isJust opmod) ispec (fromMaybe thisMod opmod)) Nothing
+    structId <- recordConstStruct
+            (VTableInfo sz values (isJust opmod) index ispec (fromMaybe thisMod opmod)) Nothing
+    return (index, structId)
 
 
 -- |Return the procedure specs to store in a locally-defined vtable.  A concrete
@@ -601,7 +613,7 @@ adaptTraitImplProc ispec absProcSpec implProcSpec = do
 -- |The ABI used by a virtual call through a vtable slot.  This is the abstract
 -- method's primitive parameters, except that the dispatching vtable parameter
 -- itself is supplied by the loaded vtable and is not passed to the target proc.
-vtableSlotParams :: VTableSpec -> ProcDef -> [PrimParam]
+vtableSlotParams :: TraitImplSpec -> ProcDef -> [PrimParam]
 vtableSlotParams (TraitImplSpec trait _) absProcDef =
     procOrdinaryABIParams absProcDef
         ++ vtableParamsFor (forwardedVTableBounds trait absProcDef)
@@ -636,9 +648,9 @@ compileABIParams = concatMap compileABIParam
     outNum flow = if flowsIn flow then 1 else 0
 
 
-generateAdapter :: VTableSpec -> ProcDef -> [PrimParam] -> ProcSpec -> ProcDef
+generateAdapter :: TraitImplSpec -> ProcDef -> [PrimParam] -> ProcSpec -> ProcDef
                   -> Compiler ProcSpec
-generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
+generateAdapter ispec absProcDef adapterParams implProcSpec implProcDef = do
     adapterMod <- getModuleSpec
     gFlows <- getProcGlobalFlows implProcSpec
     let adapterOrdinaryParams = procOrdinaryABIParams absProcDef
@@ -652,7 +664,7 @@ generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
         adapterOrdinaryParams implOrdinaryParams
     let (preCasts, implOrdinaryArgs, postCasts) = unzip3 bridges
         implCallArgs = implOrdinaryArgs
-            ++ adapterVTableArgs vspec absProcDef implProcDef adapterParams
+            ++ adapterVTableArgs ispec absProcDef implProcDef adapterParams
     let adapterName = procName absProcDef ++ adapterNamePostfix
         proto = PrimProto adapterName adapterParams
             $ makeGlobalFlows (zip [0..] adapterParams)
@@ -677,7 +689,7 @@ generateAdapter vspec absProcDef adapterParams implProcSpec implProcDef = do
             _ -> proc)
         adapterSpec
     logMsg Clause $ "Generated vtable adapter " ++ show adapterSpec
-        ++ " for " ++ show implProcSpec ++ " in " ++ show vspec
+        ++ " for " ++ show implProcSpec ++ " in " ++ show ispec
     return adapterSpec
 
 
@@ -734,8 +746,8 @@ adapterArgBridge idx adapterParam implParam
     adapterBoxOut = ArgVar boxName AnyType FlowOut Ordinary False
 
 
-adapterVTableArgs :: VTableSpec -> ProcDef -> ProcDef -> [PrimParam] -> [PrimArg]
-adapterVTableArgs vspec@(TraitImplSpec trait _) absProcDef implProcDef adapterParams =
+adapterVTableArgs :: TraitImplSpec -> ProcDef -> ProcDef -> [PrimParam] -> [PrimArg]
+adapterVTableArgs ispec@(TraitImplSpec trait _) absProcDef implProcDef adapterParams =
     snd $ List.mapAccumL vtableArg forwardedParams (procBoundedTypeParams implProcDef)
   where
     dispatchTraitMod = typeModule trait
@@ -747,7 +759,7 @@ adapterVTableArgs vspec@(TraitImplSpec trait _) absProcDef implProcDef adapterPa
     forwardedBounds = forwardedVTableBounds trait absProcDef
     vtableArg params (_, bound)
         | typeModule bound == dispatchTraitMod =
-            (params, ArgVTable (Left vspec) (Representation CPointer))
+            (params, ArgVTable (Left ispec) (Representation CPointer))
         | otherwise = case params of
             param:rest -> (rest, ArgVTable (Right $ primParamName param)
                 (Representation CPointer))

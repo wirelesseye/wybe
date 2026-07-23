@@ -289,7 +289,7 @@ preScanProcs = do
                 ++ intercalate ", " (concatMap (List.map (show.procName)) procss)
     vTables <- lift $ getModule modVTables
     logLLVM $ "Start recording vTables in module " ++ showModSpec thisMod
-    mapM_ recordConst vTables
+    mapM_ (recordConst . snd) vTables
     logLLVM "End recording vTables"
     let bodies = concatMap (concatMap allProcBodies) procss
     mapM_ (mapLPVMBodyM (recordExtern mod) (prescanArg mod)) bodies
@@ -359,8 +359,8 @@ recordConst spec = do
     when new $ do
         info <- lift (lookupConstInfo spec)
         case info of
-            Just info@VTableInfo{vtableSpec=vspec,vtableExternal=external} -> do
-                previous <- gets $ Map.lookup vspec . allVTables
+            Just info@VTableInfo{vtableSpec=ispec,vtableExternal=external} -> do
+                previous <- gets $ Map.lookup ispec . allVTables
                 replace <- case previous of
                     Nothing -> return True
                     Just previousSpec
@@ -374,7 +374,7 @@ recordConst spec = do
                     modify $ \s -> s {
                         allConsts = Set.insert spec
                             $ maybe id Set.delete previous $ allConsts s,
-                        allVTables = Map.insert vspec spec $ allVTables s }
+                        allVTables = Map.insert ispec spec $ allVTables s }
                     recordConstParts info
             _ -> do
                 modify $ \s -> s {allConsts=Set.insert spec $ allConsts s}
@@ -1204,10 +1204,10 @@ declareStructConstant name (StructInfo sz members) section = do
                     ++ " = private unnamed_addr constant " ++ llvmFields
                     ++ maybe "" ((", section "++) . show) section
                     ++ ", align " ++ show wordSizeBytes
-declareStructConstant _ (VTableInfo sz members external spec mod) section = do
+declareStructConstant _ (VTableInfo sz members external index spec mod) section = do
     let llvmType = llvmStructType $ llvmConstValueRep <$> members
     llvmFields <- llvmConstStruct members
-    let name = llvmVTableName spec mod
+    let name = llvmVTableName mod index
     llvmPutStrLn $ llvmGlobalName name ++ " = "
                     ++ (if external then "external " else "")
                     ++ "unnamed_addr constant "
@@ -1680,12 +1680,17 @@ llvmValue arg@(ArgClosure pspec args ty) = do
             llvmValue readPtr
 llvmValue (ArgGlobal val _) = llvmGlobalInfoName val
 llvmValue (ArgVTable info ty) = case info of
-    Left vspec -> do
+    Left ispec -> do
         knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
-        let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup vspec knownTraitImpls
+        let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup ispec knownTraitImpls
         thisMod <- lift getModuleSpec
         let mod = fromMaybe thisMod opmod
-        return $ llvmGlobalName $ llvmVTableName vspec mod
+        vTables <- lift $ getModule modVTables `inModule` mod
+        let (index, _) = trustFromJust
+                ("llvmValue: missing vtable " ++ show ispec ++ " in "
+                    ++ showModSpec mod)
+                (Map.lookup ispec vTables)
+        return $ llvmGlobalName $ llvmVTableName mod index
     Right var -> llvmValue $ ArgVar var ty FlowIn VTable False
 llvmValue (ArgConstRef structID ty) = do
     rep <- typeRep ty
@@ -2032,7 +2037,7 @@ data LLVMState = LLVMState {
                                      -- ^ Static constants appearing in module
         allExterns :: Map String ExternSpec,
                                     -- ^ Extern declarations needed by module
-        allVTables :: Map VTableSpec StructID,
+        allVTables :: Map TraitImplSpec StructID,
                                     -- ^ Preferred vtable constant for each spec;
                                     -- local definitions supersede declarations
         fileHandle :: Handle,       -- ^ The file handle we're writing to
@@ -2440,15 +2445,10 @@ llvmLabelName varName = "label %" ++ llvmQuoteIfNecessary varName
 
 
 -- | Make a suitable LLVM name for a vtable.
-llvmVTableName :: VTableSpec -> ModSpec -> String
-llvmVTableName (TraitImplSpec trait typ) mod = do
-    let trait' = mangleTypeSpec trait
-    let typ' = mangleTypeSpec typ
-    let mod' = mangleModSpec mod
-    vtableNamePrefix
-        ++ specialSeparator ++ show trait'
-        ++ specialSeparator ++ show typ'
-        ++ specialSeparator ++ showModSpec mod'
+llvmVTableName :: ModSpec -> Int -> String
+llvmVTableName mod index =
+    showModSpec (mangleModSpec mod) ++
+    specialName2 vtableNamePrefix (show index)
 
 
 -- | Format a string as an LLVM string; the Bool indicates whether to add
