@@ -23,7 +23,7 @@ module AST (
   determinismSeq, determinismProceding, determinismName, determinismCanFail,
   impurityName, impuritySeq, expectedImpurity,
   inliningName,
-  TraitSpec, TraitImplSpec(..), VTableSpec, TypeVarBound,
+  TraitSpec, TraitImplSpec(..), TypeVarBound,
   TypeProto(..), TypeModifiers(..), TypeSpec(..), typeVarSet, TypeVarName(..),
   genericType, higherOrderType, isHigherOrder,
   isResourcefulHigherOrder, isTraitType, typeModule,
@@ -1556,7 +1556,7 @@ data Module = Module {
   modAbstractProcCount :: Int,
                                    -- ^The number of abstract procs defined in
                                    -- this module
-  modVTables :: Map VTableSpec StructID,
+  modVTables :: Map TraitImplSpec (Int, StructID),
                                    -- ^The vtables defined in this module
   stmtDecls :: [Placed Stmt],      -- ^top-level statements in this module
   itemsHash :: Maybe String        -- ^map of proc name to its hash
@@ -2354,7 +2354,7 @@ primImpurity (PrimHigher _ (ArgConstRef structID _) impurity _) = do
     lookupConstInfo structID >>= \case
         Just (StructInfo _ (FnPointerStructMember pspec:t)) ->
             max impurity . procImpurity <$> getProcDef pspec
-        Just (VTableInfo _ (FnPointerStructMember pspec:t) _ _ _) ->
+        Just (VTableInfo _ (FnPointerStructMember pspec:t) _ _ _ _) ->
             max impurity . procImpurity <$> getProcDef pspec
         _ -> return impurity
 primImpurity (PrimHigher _ fn impurity _) = return impurity
@@ -3749,7 +3749,7 @@ data PrimArg
      | ArgFloat Double TypeSpec                -- ^Constant floating point arg
      | ArgClosure ProcSpec [PrimArg] TypeSpec  -- ^Closure, with closed args
      | ArgGlobal GlobalInfo TypeSpec           -- ^Constant global reference
-     | ArgVTable (Either VTableSpec PrimVarName) TypeSpec
+     | ArgVTable (Either TraitImplSpec PrimVarName) TypeSpec
                                                -- ^Ref to vtable (either global or local)
      | ArgConstRef StructID TypeSpec           -- ^Ref to constant memory block
      | ArgUnneeded PrimFlow TypeSpec           -- ^Unneeded input or output
@@ -3769,9 +3769,6 @@ data TraitImplSpec =
     }
     deriving (Eq,Ord,Generic)
 
--- |Identifies the vtable for a trait implementation.
-type VTableSpec = TraitImplSpec
-
 -- |A type variable together with the trait it is required to implement.
 type TypeVarBound = (TypeVarName, TraitSpec)
 
@@ -3786,7 +3783,8 @@ data StructInfo
         vtableSize :: Int,          -- ^ The size of the struct in bytes
         vtableData :: [ConstValue], -- ^ Contents of the struct, in memory order
         vtableExternal :: Bool,     -- ^ Whether this vtable is defined in other module
-        vtableSpec :: VTableSpec,   -- ^ The vtable spec
+        vtableIndex :: Int,         -- ^ Its index in the defining module
+        vtableSpec :: TraitImplSpec,-- ^ The trait impl spec
         vtableMod  :: ModSpec       -- ^ The mod where this vtable is defined
     }
     -- | A constant memory block of characters, with 0-termination.  A more
@@ -3875,7 +3873,7 @@ constValueAtOffset (StructInfo _ fields) offset = go fields offset
             | off < 0 = Nothing
             | otherwise = go fields (off - constValueSize field)
           go [] _ = Nothing
-constValueAtOffset (VTableInfo _ fields _ _ _) offset = go fields offset
+constValueAtOffset (VTableInfo _ fields _ _ _ _) offset = go fields offset
     where go (field:fields) off
             | off == 0 = Just field
             | off < 0 = Nothing
@@ -3972,7 +3970,7 @@ argGlobalFlow varFlows (ArgClosure pspec args _) = do
 argGlobalFlow varFlows (ArgConstRef structID _) = do
     lookupConstInfo structID >>= (\case
             StructInfo _ fields -> constsGlobalFlows fields
-            VTableInfo _ fields _ _ _ -> constsGlobalFlows fields
+            VTableInfo _ fields _ _ _ _ -> constsGlobalFlows fields
             _ -> return emptyGlobalFlows)
         . trustFromJust "lookupConstStruct"
 argGlobalFlow _ _ = return emptyGlobalFlows
@@ -4008,7 +4006,7 @@ constGlobalFlows :: ConstValue -> Compiler GlobalFlows
 constGlobalFlows (PointerStructMember structID) = do
     lookupConstInfo structID >>= (\case
             StructInfo _ fields -> constsGlobalFlows fields
-            VTableInfo _ fields _ _ _ -> constsGlobalFlows fields
+            VTableInfo _ fields _ _ _ _ -> constsGlobalFlows fields
             _ -> return emptyGlobalFlows)
         . trustFromJust "lookupConstStruct"
 constGlobalFlows _ = return emptyGlobalFlows

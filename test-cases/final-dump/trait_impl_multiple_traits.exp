@@ -9,8 +9,8 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_impl_multiple_traits.<0>
   constants       : 0:: CStringInfo {cstringChars = "integer "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_impl_multiple_traits.same#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_impl_multiple_traits.equivalent, vtableMod = ["trait_impl_multiple_traits"]}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_impl_multiple_traits.render#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_impl_multiple_traits.printable, vtableMod = ["trait_impl_multiple_traits"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_impl_multiple_traits.same#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_impl_multiple_traits.equivalent, vtableMod = ["trait_impl_multiple_traits"]}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_impl_multiple_traits.render#adapter<0>], vtableExternal = False, vtableIndex = 1, vtableSpec = wybe.int <: trait_impl_multiple_traits.printable, vtableMod = ["trait_impl_multiple_traits"]}
                     3:: StructInfo {structSize = 16, structData = [IntStructMember 8 8,PointerStructMember c"integer "]}
   imports         : use trait_impl_multiple_traits.equivalent
                     use trait_impl_multiple_traits.printable
@@ -80,8 +80,8 @@ source_filename = "!ROOT!/final-dump/trait_impl_multiple_traits.wybe"
 target triple   = ????
 
 @"trait_impl_multiple_traits#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"integer \00", align 8
-@"#vtable##trait_impl_multiple_traits#.equivalent##wybe#.int##trait_impl_multiple_traits#" = unnamed_addr constant {ptr} { ptr @"trait_impl_multiple_traits#.same#adapter<0>" }, align 8
-@"#vtable##trait_impl_multiple_traits#.printable##wybe#.int##trait_impl_multiple_traits#" = unnamed_addr constant {ptr} { ptr @"trait_impl_multiple_traits#.render#adapter<0>" }, align 8
+@"trait_impl_multiple_traits##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_impl_multiple_traits#.same#adapter<0>" }, align 8
+@"trait_impl_multiple_traits##vtable#1" = unnamed_addr constant {ptr} { ptr @"trait_impl_multiple_traits#.render#adapter<0>" }, align 8
 @"trait_impl_multiple_traits#constant#3" = private unnamed_addr constant {i64, ptr} { i64 8, ptr @"trait_impl_multiple_traits#constant#0" }, align 8
 
 declare external fastcc void @"wybe#.bool#.print<0>"(i1)

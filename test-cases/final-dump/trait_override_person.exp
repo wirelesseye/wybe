@@ -65,7 +65,7 @@ define external fastcc i64 @"trait_override_named#.describe<1>"() {
                     trait_override_person.trait_override_person<0>
                     trait_override_person.trait_override_person<1>
                     trait_override_person.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe#adapter<0>], vtableExternal = False, vtableSpec = trait_override_person <: trait_override_named, vtableMod = ["trait_override_person"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_override_person.describe#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_override_person <: trait_override_named, vtableMod = ["trait_override_person"]}
   imports         : use trait_override_named
                     use wybe
   resources       : 
@@ -139,7 +139,7 @@ proc ~= > public {inline} (0 calls)
 source_filename = "!ROOT!/final-dump/trait_override_person.wybe"
 target triple   = ????
 
-@"#vtable##trait_override_named##trait_override_person##trait_override_person#" = unnamed_addr constant {ptr} { ptr @"trait_override_person#.describe#adapter<0>" }, align 8
+@"trait_override_person##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_override_person#.describe#adapter<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 

@@ -10,7 +10,7 @@ AFTER EVERYTHING:
   public procs    : trait_output_only_adapter.<0>
                     trait_output_only_adapter.from_string<0>
   constants       : 0:: CStringInfo {cstringChars = "123"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_output_only_adapter.from_string#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_output_only_adapter.from_string, vtableMod = ["trait_output_only_adapter"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_output_only_adapter.from_string#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_output_only_adapter.from_string, vtableMod = ["trait_output_only_adapter"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"123"]}
   imports         : use trait_output_only_adapter.from_string
                     use wybe
@@ -54,7 +54,7 @@ source_filename = "!ROOT!/final-dump/trait_output_only_adapter.wybe"
 target triple   = ????
 
 @"trait_output_only_adapter#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"123\00", align 8
-@"#vtable##trait_output_only_adapter#.from_string##wybe#.int##trait_output_only_adapter#" = unnamed_addr constant {ptr} { ptr @"trait_output_only_adapter#.from_string#adapter<0>" }, align 8
+@"trait_output_only_adapter##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_output_only_adapter#.from_string#adapter<0>" }, align 8
 @"trait_output_only_adapter#constant#2" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_output_only_adapter#constant#0" }, align 8
 
 declare external ccc void @print_int(i64)
@@ -62,7 +62,7 @@ declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_output_only_adapter#.<0>"() {
-  %"tmp#0##0" = tail call fastcc i64 @"trait_output_only_adapter#.from_string#.from_string<0>"(i64 ptrtoint( ptr @"trait_output_only_adapter#constant#2" to i64 ), ptr @"#vtable##trait_output_only_adapter#.from_string##wybe#.int##trait_output_only_adapter#")
+  %"tmp#0##0" = tail call fastcc i64 @"trait_output_only_adapter#.from_string#.from_string<0>"(i64 ptrtoint( ptr @"trait_output_only_adapter#constant#2" to i64 ), ptr @"trait_output_only_adapter##vtable#0")
   call ccc void @print_int(i64 %"tmp#0##0")
   call ccc void @putchar(i8 10)
   ret void

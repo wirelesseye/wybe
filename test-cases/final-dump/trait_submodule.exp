@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_submodule.<0>
   constants       : 0:: CStringInfo {cstringChars = "integer "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule.render#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_submodule.printable, vtableMod = ["trait_submodule"]}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule.render#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_submodule.printable, vtableMod = ["trait_submodule"]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 8 8,PointerStructMember c"integer "]}
   imports         : use trait_submodule.printable
                     use wybe
@@ -56,7 +56,7 @@ source_filename = "!ROOT!/final-dump/trait_submodule.wybe"
 target triple   = ????
 
 @"trait_submodule#constant#0" = private unnamed_addr constant [ ?? x i8 ] c"integer \00", align 8
-@"#vtable##trait_submodule#.printable##wybe#.int##trait_submodule#" = unnamed_addr constant {ptr} { ptr @"trait_submodule#.render#adapter<0>" }, align 8
+@"trait_submodule##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_submodule#.render#adapter<0>" }, align 8
 @"trait_submodule#constant#2" = private unnamed_addr constant {i64, ptr} { i64 8, ptr @"trait_submodule#constant#0" }, align 8
 
 declare external fastcc i64 @"wybe#.int#.fmt<2>"(i64, i64, i8)

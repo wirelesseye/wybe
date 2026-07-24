@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_submodule_impl_vtable.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule_impl_vtable.sub.my_equal#adapter<0>], vtableExternal = True, vtableSpec = wybe.int <: trait_submodule_impl_vtable.my_eq, vtableMod = ["trait_submodule_impl_vtable","sub"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule_impl_vtable.sub.my_equal#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = wybe.int <: trait_submodule_impl_vtable.my_eq, vtableMod = ["trait_submodule_impl_vtable","sub"]}
   imports         : use trait_submodule_impl_vtable.my_eq
                     use trait_submodule_impl_vtable.sub
                     use wybe
@@ -43,14 +43,14 @@ requires_eq(x##0:Type0<:trait_submodule_impl_vtable.my_eq <{}; {}; {0}>, y##0:Ty
 source_filename = "!ROOT!/final-dump/trait_submodule_impl_vtable.wybe"
 target triple   = ????
 
-@"#vtable##trait_submodule_impl_vtable#.my_eq##wybe#.int##trait_submodule_impl_vtable#.sub#" = external unnamed_addr constant {ptr}, align 8
+@"trait_submodule_impl_vtable#.sub##vtable#0" = external unnamed_addr constant {ptr}, align 8
 
 declare external fastcc void @"wybe#.bool#.print<0>"(i1)
 declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 define external fastcc void @"trait_submodule_impl_vtable#.<0>"() {
-  %"tmp#0##0" = tail call fastcc i1 @"trait_submodule_impl_vtable#.my_eq#.my_equal<0>"(i64 1, i64 2, ptr @"#vtable##trait_submodule_impl_vtable#.my_eq##wybe#.int##trait_submodule_impl_vtable#.sub#")
+  %"tmp#0##0" = tail call fastcc i1 @"trait_submodule_impl_vtable#.my_eq#.my_equal<0>"(i64 1, i64 2, ptr @"trait_submodule_impl_vtable#.sub##vtable#0")
   tail call fastcc void @"wybe#.bool#.print<0>"(i1 %"tmp#0##0")
   call ccc void @putchar(i8 10)
   ret void
@@ -104,7 +104,7 @@ define external fastcc i1 @"trait_submodule_impl_vtable#.my_eq#.my_equal<0>"(i64
   public submods  : 
   public resources: 
   public procs    : 
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule_impl_vtable.sub.my_equal#adapter<0>], vtableExternal = False, vtableSpec = wybe.int <: trait_submodule_impl_vtable.my_eq, vtableMod = ["trait_submodule_impl_vtable","sub"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule_impl_vtable.sub.my_equal#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_submodule_impl_vtable.my_eq, vtableMod = ["trait_submodule_impl_vtable","sub"]}
   imports         : use trait_submodule_impl_vtable
                     use wybe
   resources       : 
@@ -135,7 +135,7 @@ my_equal#adapter(a##0:Type0<:trait_submodule_impl_vtable.my_eq, b##0:Type0<:trai
 source_filename = "!ROOT!/final-dump/trait_submodule_impl_vtable.wybe"
 target triple   = ????
 
-@"#vtable##trait_submodule_impl_vtable#.my_eq##wybe#.int##trait_submodule_impl_vtable#.sub#" = unnamed_addr constant {ptr} { ptr @"trait_submodule_impl_vtable#.sub#.my_equal#adapter<0>" }, align 8
+@"trait_submodule_impl_vtable#.sub##vtable#0" = unnamed_addr constant {ptr} { ptr @"trait_submodule_impl_vtable#.sub#.my_equal#adapter<0>" }, align 8
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
