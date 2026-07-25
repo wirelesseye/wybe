@@ -1719,6 +1719,40 @@ def combine2(x:T<:formattable, y:T2<:formattable): string =
     "$(fmt(x)), $(fmt(y))"
 ```
 
+Traits may have type parameters.  In a top-level trait module, place the
+parameters after `trait`:
+
+```
+# collection.wybe
+trait(T)
+
+abstract insert(!collection:_(T), item:T)
+abstract contains(collection:_(T), item:T): bool
+```
+
+In the shorthand declaration, place the parameters after the trait name:
+
+```
+type collection(T) trait {
+    abstract insert(!collection:_(T), item:T)
+    abstract contains(collection:_(T), item:T): bool
+}
+```
+
+Each implementation supplies concrete arguments for those parameters, which
+specialise the signatures of the trait's abstract procedures and functions.
+For example, an integer set can implement `collection(int)`:
+
+```
+impl int_set <: collection(int)
+
+def insert(!set:int_set, item:int) { ... }
+def contains(set:int_set, item:int): bool = ...
+```
+
+Here the trait parameter `T` becomes `int`, while `_` becomes the
+implementing type, `int_set`.
+
 
 ### Implementing a trait
 
