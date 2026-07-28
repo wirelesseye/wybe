@@ -611,18 +611,16 @@ adaptTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcSpec -> Compiler ProcSpec
 adaptTraitImplProc ispec absProcSpec implProcSpec = do
     absProcDef <- getProcDef absProcSpec
     implProcDef <- getProcDef implProcSpec
-    adapterParams <- vtableSlotParams ispec absProcDef
+    let adapterParams = vtableSlotParams ispec absProcDef
     generateAdapter ispec absProcDef adapterParams implProcSpec implProcDef
 
 
 -- |The ABI used by a virtual call through a vtable slot.  This is the abstract
 -- method's primitive parameters, except that the dispatching vtable parameter
 -- itself is supplied by the loaded vtable and is not passed to the target proc.
-vtableSlotParams :: TraitImplSpec -> ProcDef -> Compiler [PrimParam]
-vtableSlotParams ispec@(TraitImplSpec trait _) absProcDef = do
-    absProto <- traitImplProcProto False ispec absProcDef
-    let absProcDef' = absProcDef { procProto = absProto }
-    return $ procOrdinaryABIParams absProcDef
+vtableSlotParams :: TraitImplSpec -> ProcDef -> [PrimParam]
+vtableSlotParams (TraitImplSpec trait _) absProcDef =
+    procOrdinaryABIParams absProcDef
         ++ vtableParamsFor (forwardedVTableBounds trait absProcDef)
 
 
@@ -660,9 +658,8 @@ generateAdapter :: TraitImplSpec -> ProcDef -> [PrimParam] -> ProcSpec -> ProcDe
 generateAdapter ispec absProcDef adapterParams implProcSpec implProcDef = do
     adapterMod <- getModuleSpec
     gFlows <- getProcGlobalFlows implProcSpec
-    let implOrdinaryParams = procOrdinaryABIParams implProcDef
-        ordinaryParamCount = length $ procOrdinaryABIParams absProcDef
-        adapterOrdinaryParams = List.take ordinaryParamCount adapterParams
+    let adapterOrdinaryParams = procOrdinaryABIParams absProcDef
+        implOrdinaryParams = procOrdinaryABIParams implProcDef
     unless (sameLength adapterOrdinaryParams implOrdinaryParams) $
         shouldnt $ "adapter ordinary param count mismatch for "
             ++ show implProcSpec ++ ": abstract params "
