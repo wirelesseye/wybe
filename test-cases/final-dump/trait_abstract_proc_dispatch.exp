@@ -40,7 +40,7 @@ print_value(x##0:wybe.int)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}>:
 
 proc print_value#adapter > {noinline} (0 calls)
 0: trait_abstract_proc_dispatch.print_value#adapter<0>
-print_value#adapter(x##0:Type0<:trait_abstract_proc_dispatch.printable)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}>:
+print_value#adapter(x##0:Type0<:trait_abstract_proc_dispatch.printable, #vtable##0:opaque)<{<<wybe.io.io>>}; {<<wybe.io.io>>}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign lpvm cast(~x##0:Type0<:trait_abstract_proc_dispatch.printable, ?x#adapter0##0:wybe.int)
@@ -82,7 +82,7 @@ define external fastcc void @"trait_abstract_proc_dispatch#.print_value<0>"(i64 
   ret void
 }
 
-define external fastcc void @"trait_abstract_proc_dispatch#.print_value#adapter<0>"(i64 %"x##0") {
+define external fastcc void @"trait_abstract_proc_dispatch#.print_value#adapter<0>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#1##0" = tail call fastcc i64 @"wybe#.int#.fmt<2>"(i64 %"x##0", i64 0, i8 32)
   %"tmp#2##0" = tail call fastcc i64 @"wybe#.string#.,,<0>"(i64 ptrtoint( ptr @"trait_abstract_proc_dispatch#constant#2" to i64 ), i64 %"tmp#1##0")
   tail call fastcc void @"wybe#.string#.print<0>"(i64 %"tmp#2##0")

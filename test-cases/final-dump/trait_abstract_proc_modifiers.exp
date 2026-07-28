@@ -44,7 +44,7 @@ matches(x##0:wybe.int, ?#success##0:wybe.bool)<{}; {}; {}>:
 
 proc matches#adapter > {noinline,semipure} (0 calls)
 0: trait_abstract_proc_modifiers.matches#adapter<0>
-matches#adapter(x##0:Type0<:trait_abstract_proc_modifiers.matcher, ?#success##0:wybe.bool)<{}; {}; {}>:
+matches#adapter(x##0:Type0<:trait_abstract_proc_modifiers.matcher, ?#success##0:wybe.bool, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign lpvm cast(~x##0:Type0<:trait_abstract_proc_modifiers.matcher, ?x#adapter0##0:wybe.int)
@@ -84,7 +84,7 @@ define external fastcc i1 @"trait_abstract_proc_modifiers#.matches<0>"(i64 %"x##
   ret i1 %"tmp#3##0"
 }
 
-define external fastcc i1 @"trait_abstract_proc_modifiers#.matches#adapter<0>"(i64 %"x##0") {
+define external fastcc i1 @"trait_abstract_proc_modifiers#.matches#adapter<0>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#1##0" = icmp eq i64 %"x##0", 42
   ret i1 %"tmp#1##0"
 }

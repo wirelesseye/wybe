@@ -67,7 +67,7 @@ target triple   = ????
 @"trait_basic_dog##vtable#0" = external unnamed_addr constant {ptr}, align 8
 @"trait_basic#constant#2" = private unnamed_addr constant {i64, ptr} { i64 3, ptr @"trait_basic#constant#0" }, align 8
 
-declare external fastcc i64 @"trait_basic_dog#.speak#adapter<0>"(i64)
+declare external fastcc i64 @"trait_basic_dog#.speak#adapter<0>"(i64, ptr)
 declare external fastcc void @"wybe#.string#.print<0>[410bae77d3]"(i64)
 declare external ccc void @putchar(i8)
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
@@ -156,7 +156,7 @@ speak(x##0:trait_basic_dog, ?#result##0:wybe.string)<{}; {}; {}>:
 
 proc speak#adapter > {noinline} (0 calls)
 0: trait_basic_dog.speak#adapter<0>
-speak#adapter(x##0:Type0<:trait_basic_speaker, ?#result##0:wybe.string)<{}; {}; {}>:
+speak#adapter(x##0:Type0<:trait_basic_speaker, ?#result##0:wybe.string, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: [(#result##0,x##0)]
   InterestingCallProperties: []
     wybe.string.,,<0>(~x##0:wybe.string, " says woof":wybe.string, ?#result##0:wybe.string) #1 @trait_basic_dog:nn:nn
@@ -217,7 +217,7 @@ define external fastcc i64 @"trait_basic_dog#.speak<0>"(i64 %"x##0") {
   ret i64 %"tmp#10##0"
 }
 
-define external fastcc i64 @"trait_basic_dog#.speak#adapter<0>"(i64 %"x##0") {
+define external fastcc i64 @"trait_basic_dog#.speak#adapter<0>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#2##0" = tail call fastcc i64 @"wybe#.string#.,,<0>"(i64 %"x##0", i64 ptrtoint( ptr @"trait_basic_dog#constant#2" to i64 ))
   ret i64 %"tmp#2##0"
 }

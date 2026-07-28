@@ -161,7 +161,7 @@ compileProc proc procID =
         let procName = procProtoName proto
         let params = content <$> procProtoParams proto
         let boundedTypeParams = procBoundedTypeParams proc
-        let vTableParams = vtableParamsFor boundedTypeParams
+        let vTableParams = vtableParamsFor 0 boundedTypeParams
         let vTableParamDict = Map.fromList (zip boundedTypeParams vTableParams)
         modify (\st -> st {nextCallSiteID=procCallSiteCount proc
                           ,vTableParamDict=vTableParamDict})
@@ -519,9 +519,9 @@ vtableParam index =
             FlowIn VTable (ParamInfo False emptyGlobalFlows)
 
 
-vtableParamsFor :: [TypeVarBound] -> [PrimParam]
-vtableParamsFor bounds =
-    [vtableParam i | (i, _) <- zip [0..] bounds]
+vtableParamsFor :: Int -> [TypeVarBound] -> [PrimParam]
+vtableParamsFor idx bounds =
+    [vtableParam i | (i, _) <- zip [idx..] bounds]
 
 
 -- |Compile all locally-defined trait vtables.  This must happen before clause
@@ -621,7 +621,16 @@ adaptTraitImplProc ispec absProcSpec implProcSpec = do
 vtableSlotParams :: TraitImplSpec -> ProcDef -> [PrimParam]
 vtableSlotParams (TraitImplSpec trait _) absProcDef =
     procOrdinaryABIParams absProcDef
-        ++ vtableParamsFor (forwardedVTableBounds trait absProcDef)
+        ++ vtableParamsFor 0 (dispatchVTableBounds trait absProcDef)
+        ++ vtableParamsFor 1 (forwardedVTableBounds trait absProcDef)
+
+
+dispatchVTableBounds :: TraitSpec -> ProcDef -> [TypeVarBound]
+dispatchVTableBounds dispatchTrait absProcDef =
+    [ bounded
+    | bounded@(_, bound) <- procBoundedTypeParams absProcDef
+    , typeModule bound == typeModule dispatchTrait
+    ]
 
 
 forwardedVTableBounds :: TraitSpec -> ProcDef -> [TypeVarBound]

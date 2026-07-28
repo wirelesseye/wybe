@@ -53,7 +53,7 @@ from(f##0:wybe.float, ?#result##0:wybe.int)<{}; {}; {}>:
 
 proc from#adapter > {noinline} (0 calls)
 0: trait_parameterised_instance.from#adapter<0>
-from#adapter(x##0:U, ?#result##0:Type0<:trait_parameterised_instance.from(U))<{}; {}; {}>:
+from#adapter(x##0:U, ?#result##0:Type0<:trait_parameterised_instance.from(U), #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign lpvm cast(~x##0:U, ?f#adapter0##0:wybe.float)
@@ -62,7 +62,7 @@ from#adapter(x##0:U, ?#result##0:Type0<:trait_parameterised_instance.from(U))<{}
     foreign lpvm cast(~#result#adapter1##0:wybe.int, ?#result##0:Type0<:trait_parameterised_instance.from(U))
 proc from#adapter > {noinline} (0 calls)
 1: trait_parameterised_instance.from#adapter<1>
-from#adapter(x##0:U, ?#result##0:Type0<:trait_parameterised_instance.from(U))<{}; {}; {}>:
+from#adapter(x##0:U, ?#result##0:Type0<:trait_parameterised_instance.from(U), #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: [InterestingUnaliased 0]
   MultiSpeczDepInfo: [(1,(wybe.string.c_string<0>,fromList [NonAliasedParamCond 0 [0]]))]
@@ -115,14 +115,14 @@ define external fastcc i64 @"trait_parameterised_instance#.from<1>"(double %"f##
   ret i64 %"tmp#3##0"
 }
 
-define external fastcc i64 @"trait_parameterised_instance#.from#adapter<0>"(i64 %"x##0") {
+define external fastcc i64 @"trait_parameterised_instance#.from#adapter<0>"(i64 %"x##0", ptr %"#vtable##0") {
   %"f#adapter0##0" = bitcast i64 %"x##0" to double
   %"tmp#1##0" = call ccc double @llvm.round.f64(double %"f#adapter0##0")
   %"#result#adapter1##0" = fptosi double %"tmp#1##0" to i64
   ret i64 %"#result#adapter1##0"
 }
 
-define external fastcc i64 @"trait_parameterised_instance#.from#adapter<1>"(i64 %"x##0") {
+define external fastcc i64 @"trait_parameterised_instance#.from#adapter<1>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#1##0" = tail call fastcc i64 @"wybe#.string#.c_string<0>"(i64 %"x##0")
   %"#result#adapter1##0" = call ccc i64 @atoi(i64 %"tmp#1##0")
   ret i64 %"#result#adapter1##0"

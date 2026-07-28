@@ -55,13 +55,13 @@ render([x##0:trait_concrete_type_args.box(wybe.float)], ?#result##0:wybe.string)
 
 proc render#adapter > {noinline} (0 calls)
 0: trait_concrete_type_args.render#adapter<0>
-render#adapter(x##0:Type0<:trait_concrete_type_args.printable, ?#result##0:wybe.string)<{}; {}; {}>:
+render#adapter(x##0:Type0<:trait_concrete_type_args.printable, ?#result##0:wybe.string, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign llvm move("boxed float":wybe.string, ?#result##0:wybe.string) @trait_concrete_type_args:nn:nn
 proc render#adapter > {noinline} (0 calls)
 1: trait_concrete_type_args.render#adapter<1>
-render#adapter(x##0:Type0<:trait_concrete_type_args.printable, ?#result##0:wybe.string)<{}; {}; {}>:
+render#adapter(x##0:Type0<:trait_concrete_type_args.printable, ?#result##0:wybe.string, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
     foreign llvm move("boxed int":wybe.string, ?#result##0:wybe.string) @trait_concrete_type_args:nn:nn
@@ -105,12 +105,12 @@ define external fastcc i64 @"trait_concrete_type_args#.render<1>"() {
   ret i64 %"tmp#5##0"
 }
 
-define external fastcc i64 @"trait_concrete_type_args#.render#adapter<0>"(i64 %"x##0") {
+define external fastcc i64 @"trait_concrete_type_args#.render#adapter<0>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#1##0" = ptrtoint ptr @"trait_concrete_type_args#constant#4" to i64
   ret i64 %"tmp#1##0"
 }
 
-define external fastcc i64 @"trait_concrete_type_args#.render#adapter<1>"(i64 %"x##0") {
+define external fastcc i64 @"trait_concrete_type_args#.render#adapter<1>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#1##0" = ptrtoint ptr @"trait_concrete_type_args#constant#5" to i64
   ret i64 %"tmp#1##0"
 }
