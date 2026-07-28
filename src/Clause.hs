@@ -393,8 +393,7 @@ compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
             let boundedVarInProc = (argVarName, paramVarBound)
             let param = trustFromJust ("compileVTableArg for vtable: " ++ show boundedVarInProc) $
                     Map.lookup boundedVarInProc vTableParamDict
-            return $ ArgVTable (Right $ primParamName param)
-                (Representation CPointer)
+            return $ primParamToArg param
         _ -> do
             knownTraitImpls <- lift $
                 getModuleImplementationField modKnownTraitImpls
@@ -402,7 +401,7 @@ compileVTableArg typeVarMap (paramVarName,paramVarBound) = do
                 ispec = fst $ trustFromJust
                     ("compileVTableArg for " ++ show requested) $
                     lookupTraitImpl requested knownTraitImpls
-            return $ ArgVTable (Left ispec) (Representation CPointer)
+            return $ ArgGlobal (GlobalVTable ispec) (Representation CPointer)
 
 compileFlowArg :: FlowDirection -> Exp -> OptPos -> ClauseComp [PrimArg]
 compileFlowArg flow (Typed exp typ coerce) pos = do
@@ -551,7 +550,7 @@ compileExternalVTables thisMod = do
         referenced = execState
             (mapM_ (mapLPVMBodyM (const $ return ()) collectVTable) bodies)
             Set.empty
-        collectVTable (ArgVTable (Left ispec) _) = modify $ Set.insert ispec
+        collectVTable (ArgGlobal (GlobalVTable ispec) _) = modify $ Set.insert ispec
         collectVTable _ = return ()
     traitImpls <- Map.map content <$> getModuleImplementationField modKnownTraitImpls
     let addReferenced impls ispec = case Map.lookup ispec traitImpls of
@@ -773,10 +772,9 @@ adapterVTableArgs ispec@(TraitImplSpec trait _) absProcDef implProcDef adapterPa
     forwardedBounds = forwardedVTableBounds trait absProcDef
     vtableArg params (_, bound)
         | typeModule bound == dispatchTraitMod =
-            (params, ArgVTable (Left ispec) (Representation CPointer))
+            (params, ArgGlobal (GlobalVTable ispec) (Representation CPointer))
         | otherwise = case params of
-            param:rest -> (rest, ArgVTable (Right $ primParamName param)
-                (Representation CPointer))
+            param:rest -> (rest, primParamToArg param)
             [] -> shouldnt $ "missing forwarded vtable parameter for bound " ++ show bound
 
 

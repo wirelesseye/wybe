@@ -3586,6 +3586,7 @@ data StringVariant = WybeString | CString
 -- constant list.
 data GlobalInfo = GlobalResource { globalResourceSpec :: ResourceSpec }
                 | GlobalVariable { globalVarSpec :: Ident }
+                | GlobalVTable { globalTraitImplSpec :: TraitImplSpec }
     deriving (Eq, Ord, Generic)
 
 
@@ -3788,8 +3789,6 @@ data PrimArg
      | ArgFloat Double TypeSpec                -- ^Constant floating point arg
      | ArgClosure ProcSpec [PrimArg] TypeSpec  -- ^Closure, with closed args
      | ArgGlobal GlobalInfo TypeSpec           -- ^Constant global reference
-     | ArgVTable (Either TraitImplSpec PrimVarName) TypeSpec
-                                               -- ^Ref to vtable (either global or local)
      | ArgConstRef StructID TypeSpec           -- ^Ref to constant memory block
      | ArgUnneeded PrimFlow TypeSpec           -- ^Unneeded input or output
      | ArgUndef TypeSpec                       -- ^Undefined variable, used
@@ -4142,7 +4141,6 @@ argIsConst ArgInt{}            = True
 argIsConst ArgFloat{}          = True
 argIsConst (ArgClosure _ as _) = all argIsConst as
 argIsConst ArgGlobal{}         = True
-argIsConst ArgVTable{}         = True
 argIsConst ArgConstRef{}       = True
 argIsConst ArgUnneeded{}       = True
 argIsConst ArgUndef{}          = False
@@ -4156,7 +4154,6 @@ argIsReal (ArgInt _ ty)         = not <$> typeIsPhantom ty -- 0 is a valid phant
 argIsReal ArgFloat{}            = return True
 argIsReal (ArgClosure _ as _)   = return True
 argIsReal (ArgGlobal _ ty)      = not <$> typeIsPhantom ty
-argIsReal ArgVTable{}           = return True
 argIsReal (ArgConstRef _ ty)    = return True
 argIsReal ArgUnneeded{}         = return False
 argIsReal ArgUndef{}            = return True
@@ -4193,7 +4190,6 @@ argFlowDirection ArgInt{} = FlowIn
 argFlowDirection ArgFloat{} = FlowIn
 argFlowDirection ArgClosure{} = FlowIn
 argFlowDirection ArgGlobal{} = FlowIn
-argFlowDirection ArgVTable{} = FlowIn
 argFlowDirection ArgConstRef{} = FlowIn
 argFlowDirection (ArgUnneeded flow _) = flow
 argFlowDirection ArgUndef{} = FlowIn
@@ -4206,7 +4202,6 @@ argType (ArgInt _ typ) = typ
 argType (ArgFloat _ typ) = typ
 argType (ArgClosure _ _ typ) = typ
 argType (ArgGlobal _ typ) = typ
-argType (ArgVTable _ typ) = typ
 argType (ArgConstRef _ typ) = typ
 argType (ArgUnneeded _ typ) = typ
 argType (ArgUndef typ) = typ
@@ -4219,7 +4214,6 @@ setArgType typ (ArgInt i _) = ArgInt i typ
 setArgType typ (ArgFloat f _) = ArgFloat f typ
 setArgType typ (ArgClosure ms as _) = ArgClosure ms as typ
 setArgType typ (ArgGlobal rs _) = ArgGlobal rs typ
-setArgType typ arg@ArgVTable{} = arg
 setArgType typ (ArgConstRef ms _) = ArgConstRef ms typ
 setArgType typ (ArgUnneeded u _) = ArgUnneeded u typ
 setArgType typ (ArgUndef _) = ArgUndef typ
@@ -4256,9 +4250,6 @@ argDescription (ArgClosure ms as _)
     = "closure of '" ++ show ms ++ "' with <"
     ++ intercalate ", " (argDescription <$> as) ++ "> closed arguments"
 argDescription (ArgGlobal info _) = "global reference to " ++ show info
-argDescription (ArgVTable info _) = case info of
-    Left spec -> "reference to global vtable " ++ show spec
-    Right val -> "reference to local vtable " ++ show val
 argDescription (ArgConstRef info _) = "reference to const struct " ++ show info
 argDescription (ArgUnneeded flow _) = "unneeded " ++ argFlowDescription flow
 argDescription (ArgUndef _) = "undefined argument"
@@ -4435,7 +4426,6 @@ varsInPrimArg dir (ArgClosure _ as _)
 varsInPrimArg _ ArgInt{}      = Set.empty
 varsInPrimArg _ ArgFloat{}    = Set.empty
 varsInPrimArg _ ArgGlobal{}   = Set.empty
-varsInPrimArg _ ArgVTable{}   = Set.empty
 varsInPrimArg _ ArgConstRef{} = Set.empty
 varsInPrimArg _ ArgUnneeded{} = Set.empty
 varsInPrimArg _ ArgUndef{}    = Set.empty
@@ -5001,9 +4991,6 @@ instance Show PrimArg where
   show (ArgClosure ms as typ) = show ms ++ "<" ++ intercalate ", " (show <$> as)
                              ++ ">" ++ showTypeSuffix typ Nothing
   show (ArgGlobal info typ) = show info ++ showTypeSuffix typ Nothing
-  show (ArgVTable info typ) = case info of
-    Left spec -> "vtable(global," ++ show spec ++ ")" ++ showTypeSuffix typ Nothing
-    Right val -> "vtable(local," ++ show val ++ ")" ++ showTypeSuffix typ Nothing
   show (ArgConstRef ms typ) = show ms ++ showTypeSuffix typ Nothing
   show (ArgUnneeded dir typ) =
       primFlowPrefix dir ++ "_" ++ showTypeSuffix typ Nothing
@@ -5054,6 +5041,7 @@ instance Show StringVariant where
 instance Show GlobalInfo where
     show (GlobalResource res) = "<<" ++ show res ++ ">>"
     show (GlobalVariable res) = "@" ++ res
+    show (GlobalVTable res) = "global vtable " ++ show res
 
 
 showMap :: String -> String -> String -> (k->String) -> (v->String)

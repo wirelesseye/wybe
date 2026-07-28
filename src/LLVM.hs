@@ -410,8 +410,6 @@ argConstValue (ArgGlobal info _) = do
     -- XXX ArgGlobal is a constant pointer to a global resource or global value,
     -- but for now we don't support them in constant structures
     return Nothing
-argConstValue (ArgVTable _ _) = do
-    return Nothing
 argConstValue (ArgConstRef structID _) = do
     return $ Just $ PointerStructMember structID
 argConstValue ArgUnneeded{} = return Nothing
@@ -1679,19 +1677,6 @@ llvmValue arg@(ArgClosure pspec args ty) = do
             logLLVM $ "Converting to representation " ++ show rep
             llvmValue readPtr
 llvmValue (ArgGlobal val _) = llvmGlobalInfoName val
-llvmValue (ArgVTable info ty) = case info of
-    Left ispec -> do
-        knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
-        let opmod = content . trustFromJust ("llvmValue " ++ show info) $ Map.lookup ispec knownTraitImpls
-        thisMod <- lift getModuleSpec
-        let mod = fromMaybe thisMod opmod
-        vTables <- lift $ getModule modVTables `inModule` mod
-        let (index, _) = trustFromJust
-                ("llvmValue: missing vtable " ++ show ispec ++ " in "
-                    ++ showModSpec mod)
-                (Map.lookup ispec vTables)
-        return $ llvmGlobalName $ llvmVTableName mod index
-    Right var -> llvmValue $ ArgVar var ty FlowIn VTable False
 llvmValue (ArgConstRef structID ty) = do
     rep <- typeRep ty
     logLLVM $ "llvmValue of constant " ++ show structID
@@ -2425,6 +2410,17 @@ llvmGlobalInfoName :: GlobalInfo -> LLVM LLVMName
 llvmGlobalInfoName (GlobalResource res) =
      fst <$> llvmResource res
 llvmGlobalInfoName (GlobalVariable var) = return $ llvmGlobalName var
+llvmGlobalInfoName (GlobalVTable ispec) = do
+    knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
+    let opmod = content . trustFromJust ("llvmGlobalInfoName " ++ show ispec) $ Map.lookup ispec knownTraitImpls
+    thisMod <- lift getModuleSpec
+    let mod = fromMaybe thisMod opmod
+    vTables <- lift $ getModule modVTables `inModule` mod
+    let (index, _) = trustFromJust
+            ("llvmGlobalInfoName: missing vtable " ++ show ispec ++ " in "
+                ++ showModSpec mod)
+            (Map.lookup ispec vTables)
+    return $ llvmGlobalName $ llvmVTableName mod index
 
 
 -- | Make a suitable LLVM name for a foreign (e.g., C) function.
