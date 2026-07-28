@@ -1735,8 +1735,8 @@ abstractProcs trait = do
 
 
 -- |Specialize an abstract trait method prototype for a concrete vtable spec.
-traitImplProcProto :: Bool -> TraitImplSpec -> ProcDef -> Compiler ProcProto
-traitImplProcProto substSelf ispec@(TraitImplSpec trait implTy) absProcDef = do
+traitImplProcProto :: TraitImplSpec -> ProcDef -> Compiler ProcProto
+traitImplProcProto ispec@(TraitImplSpec trait implTy) absProcDef = do
     traitParams <- maybe (return []) (getModule modParams `inModule`) $
         typeModule trait
     let proto = procProto absProcDef
@@ -1753,7 +1753,7 @@ traitImplProcProto substSelf ispec@(TraitImplSpec trait implTy) absProcDef = do
         param { paramType =
             substParamType traitParamBindings bounds $ paramType param }
     substParamType traitParamBindings bounds ty@TypeVariable{typeVariableName=name}
-        | substSelf && any sameTraitModule (Map.findWithDefault Set.empty name bounds) =
+        | any sameTraitModule (Map.findWithDefault Set.empty name bounds) =
             implTy
         | otherwise =
             fromMaybe ty {

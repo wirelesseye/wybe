@@ -1285,7 +1285,7 @@ matchTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
 matchTraitImplProc ispec@(TraitImplSpec trait _) absProcSpec absProcDef implProcSpec = do
     implProcDef <- getProcDef implProcSpec
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
-    absProto <- traitImplProcProto True ispec absProcDef
+    absProto <- traitImplProcProto ispec absProcDef
     let absProcDef' = absProcDef { procProto = absProto }
     ((absInfo, implInfo, result), _) <- runStateT
         (matchTraitImplProc' absProcSpec absProcDef' implProcSpec implProcDef)
