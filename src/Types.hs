@@ -9,7 +9,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 -- |Support for type checking/inference.
-module Types (validateModExportTypes, typeCheckModSCC) where
+module Types (validateModExportTypes, typeCheckModSCC, canonicalise) where
 
 
 import           AST
@@ -1073,10 +1073,18 @@ mergeTypeVarBounds name ty1 ty2 = do
 unifyTypeVarBounds :: TypeError -> Set TraitSpec -> TypeSpec -> Typed TypeSpec
 unifyTypeVarBounds reason bounds ty = do
     knownTraitImpls <- lift $ getModuleImplementationField modKnownTraitImpls
-    if all (\bound -> Map.member (TraitImplSpec bound ty) knownTraitImpls)
-            (Set.toList bounds)
-        then return ty
-        else invalidTypeError reason
+    let resolve bound = do
+            (declared, _) <- lookupTraitImpl
+                (TraitImplSpec bound ty) knownTraitImpls
+            specialised <- specialiseTraitImpl declared ty
+            return (bound, specialised)
+    case mapM resolve $ Set.toList bounds of
+        Nothing -> invalidTypeError reason
+        Just resolved -> do
+            forM_ resolved $ \(bound, specialised) -> do
+                void $ unifyTypes reason ty $ implType specialised
+                void $ unifyTypes reason bound $ implTrait specialised
+            return ty
 
 invalidTypeError :: TypeError -> Typed TypeSpec
 invalidTypeError reason = typeError reason >> return InvalidType
@@ -2307,12 +2315,17 @@ canonicaliseSingle tvarDict state@(tyMap, canonicalDict) ctr ty@TypeVariable{typ
     case Map.lookup name tyMap of
         Just ty' -> (ty', ctr, state)
         Nothing ->
-            let ty' = TypeVariable (FauxTypeVar ctr) Set.empty
-                bounds = typeVarBoundsIn tvarDict ty
-                canonicalDict' = if Set.null bounds
-                    then canonicalDict
-                    else Map.insert (FauxTypeVar ctr) (Right bounds) canonicalDict
-            in (ty', ctr + 1, (Map.insert name ty' tyMap, canonicalDict'))
+            let canonicalName = FauxTypeVar ctr
+                ty' = TypeVariable canonicalName Set.empty
+                stateWithVar = (Map.insert name ty' tyMap, canonicalDict)
+                bounds = Set.toAscList $ typeVarBoundsIn tvarDict ty
+                (bounds', ctr', (tyMap', canonicalDict')) =
+                    canonicaliseList tvarDict stateWithVar (ctr + 1) bounds
+                canonicalDict'' = if List.null bounds'
+                    then canonicalDict'
+                    else Map.insert canonicalName (Right $ Set.fromList bounds')
+                            canonicalDict'
+            in (ty', ctr', (tyMap', canonicalDict''))
 canonicaliseSingle tvarDict state ctr ty@TypeSpec{typeParams=tys} =
     let (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
     in (ty{typeParams=tys'}, ctr', state')
@@ -2719,7 +2732,8 @@ moreGeneral traitImpls generalDict specificDict general@TypeVariable{} specific 
         specificVar@TypeVariable{} ->
             generalBounds `Set.isSubsetOf`
                 typeVarBoundsIn specificDict specificVar
-        _ -> all (\bound -> Map.member (TraitImplSpec bound specific) traitImpls)
+        _ -> all (\bound -> isJust $
+                    lookupTraitImpl (TraitImplSpec bound specific) traitImpls)
             (Set.toList generalBounds)
 moreGeneral traitImpls generalDict specificDict
         (TypeSpec generalMod generalName generalParams)
