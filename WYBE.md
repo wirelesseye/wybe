@@ -1820,6 +1820,17 @@ The implementation procedures are resolved in the module containing the
 matching procedures exist, one is defined locally and others are imported from
 elsewhere, then the local matching procedure is preferred.
 
+An implementation type may constrain one or more of its type variables:
+
+```
+impl hashmap(K<:hash, V) <: mapping(K, V)
+```
+
+This is a *partial trait implementation*: it implements `mapping(K,V)` only
+when the concrete `K` implements `hash`. Bounds may appear only in the
+implementation type. Writing a bound in the implemented trait, such as
+`mapping(K<:hash,V)`, is an error.
+
 ### Default trait implementations
 
 A trait may give an abstract procedure or function a default implementation by

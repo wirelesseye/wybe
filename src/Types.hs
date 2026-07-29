@@ -9,7 +9,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 -- |Support for type checking/inference.
-module Types (validateModExportTypes, typeCheckModSCC, canonicalise) where
+module Types (validateModExportTypes, typeCheckModSCC) where
 
 
 import           AST
@@ -2284,56 +2284,6 @@ typeVarFromInputParam ty = do
     let inferredVars = Set.unions $ typeVarSet <$> inferredTypes
         inputParamVars = declaredVars `Set.union` inferredVars
     return $ not . Set.null $ typeVarSet ty `Set.intersection` inputParamVars
-
-
--- | Canonicalise a list of types, with type variables starting from the
--- supplied Int.  The returned dictionary is in the canonical namespace and
--- contains the effective trait bounds of every generated type variable.
-canonicalise :: Int -> TypeVarDict -> [TypeSpec]
-             -> (([TypeSpec], TypeVarDict), Int)
-canonicalise ctr tvarDict tys =
-    let (tys', ctr', (_, canonicalDict)) =
-            canonicaliseList tvarDict (Map.empty, Map.empty) ctr tys
-    in ((tys', canonicalDict), ctr')
-
-
-type Canonicalisation = (Map TypeVarName TypeSpec, TypeVarDict)
-
-
-canonicaliseList :: TypeVarDict -> Canonicalisation -> Int -> [TypeSpec]
-                 -> ([TypeSpec], Int, Canonicalisation)
-canonicaliseList _ state ctr [] = ([], ctr, state)
-canonicaliseList tvarDict state ctr (ty:tys) =
-    let (ty', ctr', state') = canonicaliseSingle tvarDict state ctr ty
-        (tys', ctr'', state'') = canonicaliseList tvarDict state' ctr' tys
-    in (ty':tys', ctr'', state'')
-
-
-canonicaliseSingle :: TypeVarDict -> Canonicalisation -> Int -> TypeSpec
-                   -> (TypeSpec, Int, Canonicalisation)
-canonicaliseSingle tvarDict state@(tyMap, canonicalDict) ctr ty@TypeVariable{typeVariableName=name} =
-    case Map.lookup name tyMap of
-        Just ty' -> (ty', ctr, state)
-        Nothing ->
-            let canonicalName = FauxTypeVar ctr
-                ty' = TypeVariable canonicalName Set.empty
-                stateWithVar = (Map.insert name ty' tyMap, canonicalDict)
-                bounds = Set.toAscList $ typeVarBoundsIn tvarDict ty
-                (bounds', ctr', (tyMap', canonicalDict')) =
-                    canonicaliseList tvarDict stateWithVar (ctr + 1) bounds
-                canonicalDict'' = if List.null bounds'
-                    then canonicalDict'
-                    else Map.insert canonicalName (Right $ Set.fromList bounds')
-                            canonicalDict'
-            in (ty', ctr', (tyMap', canonicalDict''))
-canonicaliseSingle tvarDict state ctr ty@TypeSpec{typeParams=tys} =
-    let (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
-    in (ty{typeParams=tys'}, ctr', state')
-canonicaliseSingle tvarDict state ctr ty@HigherOrderType{higherTypeParams=tfs} =
-    let tys = typeFlowType <$> tfs
-        (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
-    in (ty{higherTypeParams=zipWith TypeFlow tys' $ typeFlowMode <$> tfs}, ctr', state')
-canonicaliseSingle _ state ctr ty = (ty, ctr, state)
 
 
 typeVarBoundDict :: [TypeVarBound] -> TypeVarDict

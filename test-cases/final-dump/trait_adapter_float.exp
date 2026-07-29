@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_adapter_float.<0>
                     trait_adapter_float.my_method<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_adapter_float.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_adapter_float.my_trait, vtableMod = ["trait_adapter_float"]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_adapter_float.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_adapter_float.my_trait, vtableMod = ["trait_adapter_float"], vtablePrerequisites = []}
   imports         : use trait_adapter_float.my_trait
                     use wybe
   resources       : 
@@ -96,7 +96,7 @@ proc my_method > public abstract {inline} (0 calls)
 my_method(x##0:Type0<:trait_adapter_float.my_trait <{}; {}; {0}>, ?#result##0:Type0<:trait_adapter_float.my_trait <{}; {}; {0}>, #vtable##0:opaque)<{}; {}; {}>:
   AliasPairs: []
   InterestingCallProperties: []
-    ~#vtable##0:opaque@0(~x##0:Type0<:trait_adapter_float.my_trait, ?#result##0:Type0<:trait_adapter_float.my_trait) #0
+    ~#vtable##0:opaque@0(~x##0:Type0<:trait_adapter_float.my_trait, ?#result##0:Type0<:trait_adapter_float.my_trait, ~#vtable##0:opaque) #0
 
   LLVM code       :
 
@@ -112,6 +112,6 @@ declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 define external fastcc i64 @"trait_adapter_float#.my_trait#.my_method<0>"(i64 %"x##0", ptr %"#vtable##0") {
   %"tmp#0##0" = getelementptr inbounds ptr, ptr %"#vtable##0", i64 0
   %"tmp#1##0" = load ptr, ptr %"tmp#0##0"
-  %"tmp#2##0" = tail call fastcc i64 %"tmp#1##0"(i64 %"x##0")
+  %"tmp#2##0" = tail call fastcc i64 %"tmp#1##0"(i64 %"x##0", ptr %"#vtable##0")
   ret i64 %"tmp#2##0"
 }

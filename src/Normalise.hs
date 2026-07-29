@@ -29,7 +29,6 @@ import Data.Tuple.Select
 import Flatten (flattenProcBody)
 import Options (LogSelection(Normalise))
 import Snippets
-import Types (canonicalise)
 import Util
 import Distribution.Parsec.FieldLineStream (fieldLineStreamEnd)
 import UnivSet (UnivSet(FiniteSet, UniversalSet))
@@ -172,8 +171,9 @@ normaliseItem (TraitImpl typ traits pos) = do
         errmsg pos $ "Invalid generic trait implementation: type variable(s) "
             ++ intercalate ", " (show <$> Set.toAscList undeclaredVars)
             ++ " not defined in the implementation type"
-    when (hasTypeVarBounds typ' || any hasTypeVarBounds traits) $
-        nyi "type variable bounds in generic trait implementations"
+    when (any hasTypeVarBounds traits) $
+        errmsg pos $ "Invalid partial trait implementation: type variable "
+            ++ "bounds are only permitted in the implementation type"
     mapM_ (\trait -> addTraitImpl pos (TraitImplSpec trait typ') Nothing) traits
   where
     hasTypeVarBounds TypeVariable{typeVariableBounds=bounds} =
@@ -204,14 +204,31 @@ normaliseTraitImpl ispec@(TraitImplSpec trait typ) mod =
         Nothing -> do
             typ' <- lookupType "trait impl" Nothing typ
             trait' <- lookupType "trait impl" Nothing trait
+            forM_ (traitImplTypeBounds $ TraitImplSpec trait' typ') $ \(_, bound) -> do
+                validBound <- isTraitType bound
+                unless validBound $ errmsg (place mod) $
+                    "Invalid partial trait implementation bound: "
+                        ++ show bound ++ " is not a trait"
             validTrait <- isTraitType trait'
             unless validTrait $ errmsg (place mod) $
                 "Invalid trait implementation: " ++ show trait' ++ " is not a trait"
             return (canonicaliseTraitImplSpec $ TraitImplSpec trait' typ', mod)
   where
     canonicaliseTraitImplSpec (TraitImplSpec trait typ) =
-        let (([typ', trait'], _), _) = canonicalise 0 Map.empty [typ, trait]
-        in TraitImplSpec trait' typ'
+        let (([typ', trait'], canonicalBounds), _) =
+                canonicalise 0 Map.empty [typ, trait]
+        in TraitImplSpec trait' $ restoreBounds canonicalBounds typ'
+    restoreBounds bounds ty@TypeVariable{typeVariableName=name} =
+        case Map.lookup name bounds of
+            Just (Right traits) -> ty { typeVariableBounds = traits }
+            _ -> ty
+    restoreBounds bounds ty@TypeSpec{typeParams=params} =
+        ty { typeParams = restoreBounds bounds <$> params }
+    restoreBounds bounds ty@HigherOrderType{higherTypeParams=flows} =
+        ty { higherTypeParams = restoreFlow bounds <$> flows }
+    restoreBounds _ ty = ty
+    restoreFlow bounds flow =
+        flow { typeFlowType = restoreBounds bounds $ typeFlowType flow }
 
 
 -- |Normalise a nested submodule containing the specified items.

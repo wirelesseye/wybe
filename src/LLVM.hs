@@ -1018,6 +1018,30 @@ writeLPVMCall "store" _ args pos = do
         (ins, outs) ->
             shouldnt $ "lpvm store with inputs " ++ show ins ++ " and outputs "
                 ++ show outs
+writeLPVMCall "make_vtable" _ args pos = do
+    releaseDeferredCall
+    args' <- partitionArgs "lpvm make_vtable instruction" args
+    case args' of
+        (template:ArgInt methodCount _:prerequisites, [result]) -> do
+            let methodSlots = fromIntegral methodCount
+                totalSlots = methodSlots + length prerequisites
+            stackAlloc result (totalSlots * wordSizeBytes)
+            let table = setArgFlow FlowIn result
+            forM_ [0 .. methodSlots - 1] $ \index -> do
+                source <- getElementPtr True (llvmTypeRep CPointer)
+                    (Just template) [ArgInt (fromIntegral index) intType]
+                destination <- getElementPtr True (llvmTypeRep CPointer)
+                    (Just table) [ArgInt (fromIntegral index) intType]
+                (writeMember, readMember) <- freshCPtrArgs
+                llvmLoad source writeMember
+                llvmStore destination readMember
+            forM_ (zip [methodSlots..] prerequisites) $ \(index, prerequisite) -> do
+                destination <- getElementPtr True (llvmTypeRep CPointer)
+                    (Just table) [ArgInt (fromIntegral index) intType]
+                llvmStore destination prerequisite
+        (ins, outs) ->
+            shouldnt $ "lpvm make_vtable with inputs " ++ show ins
+                ++ " and outputs " ++ show outs
 writeLPVMCall "access" _ args pos = do
     releaseDeferredCall
     args' <- partitionArgs "lpvm access instruction" args
@@ -1202,7 +1226,7 @@ declareStructConstant name (StructInfo sz members) section = do
                     ++ " = private unnamed_addr constant " ++ llvmFields
                     ++ maybe "" ((", section "++) . show) section
                     ++ ", align " ++ show wordSizeBytes
-declareStructConstant _ (VTableInfo sz members external index spec mod) section = do
+declareStructConstant _ (VTableInfo sz members external index _ mod _) section = do
     let llvmType = llvmStructType $ llvmConstValueRep <$> members
     llvmFields <- llvmConstStruct members
     let name = llvmVTableName mod index

@@ -24,6 +24,8 @@ module AST (
   impurityName, impuritySeq, expectedImpurity,
   inliningName,
   TraitSpec, TraitImplSpec(..), TypeVarBound, lookupTraitImpl, specialiseTraitImpl,
+  traitImplTypeBounds, traitImplPrerequisites,
+  traitImplPrerequisitesFor, canonicalise, equivTypesIgnoringBounds,
   TypeProto(..), TypeModifiers(..), TypeSpec(..), typeVarSet, TypeVarName(..),
   genericType, higherOrderType, isHigherOrder,
   isResourcefulHigherOrder, isTraitType, typeModule,
@@ -2393,7 +2395,7 @@ primImpurity (PrimHigher _ (ArgConstRef structID _) impurity _) = do
     lookupConstInfo structID >>= \case
         Just (StructInfo _ (FnPointerStructMember pspec:t)) ->
             max impurity . procImpurity <$> getProcDef pspec
-        Just (VTableInfo _ (FnPointerStructMember pspec:t) _ _ _ _) ->
+        Just (VTableInfo _ (FnPointerStructMember pspec:t) _ _ _ _ _) ->
             max impurity . procImpurity <$> getProcDef pspec
         _ -> return impurity
 primImpurity (PrimHigher _ fn impurity _) = return impurity
@@ -3813,15 +3815,34 @@ data TraitImplSpec =
 -- implementation.
 lookupTraitImpl :: TraitImplSpec -> Map TraitImplSpec a
                 -> Maybe (TraitImplSpec, a)
-lookupTraitImpl requested impls =
-    case Map.lookup requested impls of
-        Just impl -> Just (requested, impl)
-        Nothing -> List.find (matches . fst) $ Map.toList impls
+lookupTraitImpl requested impls = go Set.empty requested
   where
-    matches declared = isJust $ do
-        bindings <- bindTypeVars Map.empty
-            (implType declared) (implType requested)
-        bindTypeVars bindings (implTrait declared) (implTrait requested)
+    go seen req
+        | req `Set.member` seen = Nothing
+        | otherwise =
+            let seen' = Set.insert req seen
+                candidates = case Map.lookup req impls of
+                    Just impl -> [(req, impl)]
+                    Nothing -> Map.toList impls
+            in List.find (matches seen' req . fst) candidates
+    matches seen req declared = isJust (traitImplBindings declared req)
+        && all (prerequisiteAvailable seen)
+            (traitImplPrerequisites declared req)
+    prerequisiteAvailable seen prerequisite@(TraitImplSpec bound ty) =
+        case ty of
+            TypeVariable{typeVariableBounds=bounds}
+                | any (equivTypesIgnoringBounds bound) bounds -> True
+            _ -> isJust $ go seen prerequisite
+
+
+-- |Match a possibly-generic trait implementation declaration against a
+-- requested implementation, returning its type-variable bindings.
+traitImplBindings :: TraitImplSpec -> TraitImplSpec
+                  -> Maybe (Map TypeVarName TypeSpec)
+traitImplBindings declared requested = do
+    bindings <- bindTypeVars Map.empty
+        (implType declared) (implType requested)
+    bindTypeVars bindings (implTrait declared) (implTrait requested)
 
 
 -- |Match a possibly-generic declared type against a requested type, extending
@@ -3852,6 +3873,86 @@ bindTypeVars bindings declared requested
     | otherwise = Nothing
 
 
+-- |Canonicalise a list of types, with type variables starting from the
+-- supplied Int. The returned dictionary is in the canonical namespace and
+-- contains the effective trait bounds of every generated type variable.
+canonicalise :: Int -> TypeVarDict -> [TypeSpec]
+             -> (([TypeSpec], TypeVarDict), Int)
+canonicalise ctr tvarDict tys =
+    let (tys', ctr', (_, canonicalDict)) =
+            canonicaliseList tvarDict (Map.empty, Map.empty) ctr tys
+    in ((tys', canonicalDict), ctr')
+
+
+type Canonicalisation = (Map TypeVarName TypeSpec, TypeVarDict)
+
+
+canonicaliseList :: TypeVarDict -> Canonicalisation -> Int -> [TypeSpec]
+                 -> ([TypeSpec], Int, Canonicalisation)
+canonicaliseList _ state ctr [] = ([], ctr, state)
+canonicaliseList tvarDict state ctr (ty:tys) =
+    let (ty', ctr', state') = canonicaliseSingle tvarDict state ctr ty
+        (tys', ctr'', state'') = canonicaliseList tvarDict state' ctr' tys
+    in (ty':tys', ctr'', state'')
+
+
+canonicaliseSingle :: TypeVarDict -> Canonicalisation -> Int -> TypeSpec
+                   -> (TypeSpec, Int, Canonicalisation)
+canonicaliseSingle tvarDict state@(tyMap, canonicalDict) ctr
+        ty@TypeVariable{typeVariableName=name} =
+    case Map.lookup name tyMap of
+        Just ty' -> (ty', ctr, state)
+        Nothing ->
+            let canonicalName = FauxTypeVar ctr
+                ty' = TypeVariable canonicalName Set.empty
+                stateWithVar = (Map.insert name ty' tyMap, canonicalDict)
+                bounds = Set.toAscList $ typeVarBoundsIn tvarDict ty
+                (bounds', ctr', (tyMap', canonicalDict')) =
+                    canonicaliseList tvarDict stateWithVar (ctr + 1) bounds
+                canonicalDict'' = if List.null bounds'
+                    then canonicalDict'
+                    else Map.insert canonicalName (Right $ Set.fromList bounds')
+                            canonicalDict'
+            in (ty', ctr', (tyMap', canonicalDict''))
+canonicaliseSingle tvarDict state ctr ty@TypeSpec{typeParams=tys} =
+    let (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
+    in (ty{typeParams=tys'}, ctr', state')
+canonicaliseSingle tvarDict state ctr
+        ty@HigherOrderType{higherTypeParams=tfs} =
+    let tys = typeFlowType <$> tfs
+        (tys', ctr', state') = canonicaliseList tvarDict state ctr tys
+    in (ty{higherTypeParams=zipWith TypeFlow tys' $ typeFlowMode <$> tfs},
+        ctr', state')
+canonicaliseSingle _ state ctr ty = (ty, ctr, state)
+
+
+-- |Return the bounds stated directly on a type-variable occurrence together
+-- with bounds recorded directly for that variable.
+typeVarBoundsIn :: TypeVarDict -> TypeSpec -> Set TraitSpec
+typeVarBoundsIn dict TypeVariable{typeVariableName=name,
+                                  typeVariableBounds=bounds} =
+    bounds `Set.union` case Map.lookup name dict of
+        Just (Right bounds') -> bounds'
+        _ -> Set.empty
+typeVarBoundsIn _ _ = Set.empty
+
+
+-- |Whether two types differ only in their type-variable names. Bounds on the
+-- variables themselves do not participate; callers compare resolved bound
+-- types with this helper.
+equivTypesIgnoringBounds :: TypeSpec -> TypeSpec -> Bool
+equivTypesIgnoringBounds left right = canonicalType left == canonicalType right
+  where
+    canonicalType = fst . fst . canonicalise 0 Map.empty . pure . clearBounds
+    clearBounds ty@TypeVariable{} = ty { typeVariableBounds=Set.empty }
+    clearBounds ty@TypeSpec{typeParams=params} =
+        ty { typeParams=clearBounds <$> params }
+    clearBounds ty@HigherOrderType{higherTypeParams=flows} =
+        ty { higherTypeParams=clearFlow <$> flows }
+    clearBounds ty = ty
+    clearFlow flow = flow { typeFlowType=clearBounds $ typeFlowType flow }
+
+
 -- |Instantiate a generic implementation declaration for a requested
 -- implementation type.
 specialiseTraitImpl :: TraitImplSpec -> TypeSpec -> Maybe TraitImplSpec
@@ -3860,6 +3961,66 @@ specialiseTraitImpl declared requestedType = do
     return $ TraitImplSpec
         (substTy bindings $ implTrait declared)
         (substTy bindings $ implType declared)
+  where
+    substTy bindings ty@TypeVariable{typeVariableName=name} =
+        Map.findWithDefault ty name bindings
+    substTy bindings ty@TypeSpec{typeParams=params} =
+        ty { typeParams = substTy bindings <$> params }
+    substTy bindings ty@HigherOrderType{higherTypeParams=flows} =
+        ty { higherTypeParams = substFlow bindings <$> flows }
+    substTy _ ty = ty
+    substFlow bindings flow =
+        flow { typeFlowType = substTy bindings $ typeFlowType flow }
+
+
+-- |The trait bounds declared within an implementation type, in ABI order:
+-- type variables by first occurrence, then each variable's bounds in ascending
+-- order. Repeated occurrences of a variable contribute their union of bounds.
+traitImplTypeBounds :: TraitImplSpec -> [TypeVarBound]
+traitImplTypeBounds = typeBounds . implType
+  where
+    typeBounds ty =
+        [ (name, bound)
+        | name <- List.nub $ typeVarNames ty
+        , bound <- Set.toAscList $ Map.findWithDefault Set.empty name (boundsIn ty)
+        ]
+    typeVarNames TypeVariable{typeVariableName=name} = [name]
+    typeVarNames TypeSpec{typeParams=params} = concatMap typeVarNames params
+    typeVarNames HigherOrderType{higherTypeParams=flows} =
+        concatMap (typeVarNames . typeFlowType) flows
+    typeVarNames _ = []
+    boundsIn TypeVariable{typeVariableName=name,typeVariableBounds=bounds} =
+        Map.singleton name bounds
+    boundsIn TypeSpec{typeParams=params} =
+        List.foldl' (Map.unionWith Set.union) Map.empty $ boundsIn <$> params
+    boundsIn HigherOrderType{higherTypeParams=flows} =
+        List.foldl' (Map.unionWith Set.union) Map.empty $
+            boundsIn . typeFlowType <$> flows
+    boundsIn _ = Map.empty
+
+
+-- |The concrete trait implementations required to instantiate a partial
+-- implementation. An empty list means either the declaration does not match
+-- the request or the implementation is not partial.
+traitImplPrerequisites :: TraitImplSpec -> TraitImplSpec -> [TraitImplSpec]
+traitImplPrerequisites declared =
+    traitImplPrerequisitesFor (traitImplTypeBounds declared) declared
+
+
+-- |Specialise an explicitly supplied, canonically ordered prerequisite layout
+-- for a requested implementation. Compiled code should obtain this list from
+-- VTableInfo rather than reconstructing it from the implementation type.
+traitImplPrerequisitesFor :: [TypeVarBound] -> TraitImplSpec -> TraitImplSpec
+                          -> [TraitImplSpec]
+traitImplPrerequisitesFor prerequisites declared requested =
+  case traitImplBindings declared requested of
+    Nothing -> []
+    Just bindings ->
+        [ TraitImplSpec (substTy bindings bound) concrete
+        | (name, bound) <- prerequisites
+        , let concrete = Map.findWithDefault
+                (TypeVariable name Set.empty) name bindings
+        ]
   where
     substTy bindings ty@TypeVariable{typeVariableName=name} =
         Map.findWithDefault ty name bindings
@@ -3887,8 +4048,11 @@ data StructInfo
         vtableData :: [ConstValue], -- ^ Contents of the struct, in memory order
         vtableExternal :: Bool,     -- ^ Whether this vtable is defined in other module
         vtableIndex :: Int,         -- ^ Its index in the defining module
-        vtableSpec :: TraitImplSpec,-- ^ The trait impl spec
-        vtableMod  :: ModSpec       -- ^ The mod where this vtable is defined
+        vtableSpec :: TraitImplSpec,-- ^ The trait impl spec; its implementation
+                                    -- type carries partial prerequisites
+        vtableMod  :: ModSpec,      -- ^ The mod where this vtable is defined
+        vtablePrerequisites :: [TypeVarBound]
+                                    -- ^ Extra vtable slots after method slots
     }
     -- | A constant memory block of characters, with 0-termination.  A more
     -- concise representation for this special case.
@@ -3976,7 +4140,7 @@ constValueAtOffset (StructInfo _ fields) offset = go fields offset
             | off < 0 = Nothing
             | otherwise = go fields (off - constValueSize field)
           go [] _ = Nothing
-constValueAtOffset (VTableInfo _ fields _ _ _ _) offset = go fields offset
+constValueAtOffset (VTableInfo _ fields _ _ _ _ _) offset = go fields offset
     where go (field:fields) off
             | off == 0 = Just field
             | off < 0 = Nothing
@@ -4073,7 +4237,7 @@ argGlobalFlow varFlows (ArgClosure pspec args _) = do
 argGlobalFlow varFlows (ArgConstRef structID _) = do
     lookupConstInfo structID >>= (\case
             StructInfo _ fields -> constsGlobalFlows fields
-            VTableInfo _ fields _ _ _ _ -> constsGlobalFlows fields
+            VTableInfo _ fields _ _ _ _ _ -> constsGlobalFlows fields
             _ -> return emptyGlobalFlows)
         . trustFromJust "lookupConstStruct"
 argGlobalFlow _ _ = return emptyGlobalFlows
@@ -4109,7 +4273,7 @@ constGlobalFlows :: ConstValue -> Compiler GlobalFlows
 constGlobalFlows (PointerStructMember structID) = do
     lookupConstInfo structID >>= (\case
             StructInfo _ fields -> constsGlobalFlows fields
-            VTableInfo _ fields _ _ _ _ -> constsGlobalFlows fields
+            VTableInfo _ fields _ _ _ _ _ -> constsGlobalFlows fields
             _ -> return emptyGlobalFlows)
         . trustFromJust "lookupConstStruct"
 constGlobalFlows _ = return emptyGlobalFlows
