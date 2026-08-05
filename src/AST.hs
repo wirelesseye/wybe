@@ -1890,7 +1890,10 @@ data ModuleImplementation = ModuleImplementation {
       --   `Nothing` means the impl is defined in the current module (local)
       --   `Just mod` means it is defined in another module (external)
     modTraitImplProcs :: Map TraitImplSpec [ProcSpec],
-                                              -- Procs that satisfie trait impls
+                                              -- Original procs satisfying impls
+    modVTableProcs :: Map TraitImplSpec [ProcSpec],
+                                              -- Final procs stored in vtables,
+                                              -- including generated adapters
     modForeignObjects:: Set FilePath,         -- ^Foreign object files used
     modForeignLibs:: Set String               -- ^Foreign libraries used
     } deriving (Generic)
@@ -1899,7 +1902,7 @@ emptyImplementation :: ModuleImplementation
 emptyImplementation =
     ModuleImplementation Set.empty Map.empty Nothing Map.empty Map.empty
                          Map.empty Nothing Map.empty Map.empty Map.empty
-                         Map.empty Map.empty Map.empty Set.empty Set.empty -- Nothing
+                         Map.empty Map.empty Map.empty Map.empty Set.empty Set.empty -- Nothing
 
 
 -- These functions hack around Haskell's terrible setter syntax
