@@ -51,3 +51,4 @@ target triple   = ????
 
 
 declare external ccc void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+final-dump/trait_generic_equivalent_impls.wybe:5:1: Duplicate trait implementation declaration: wybe.list(Type0) <: trait_generic_equivalent_impls.sequence(Type0)
