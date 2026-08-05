@@ -1,3 +1,5 @@
+# Verify a parameterised trait can have multiple instances for one type.
+
 type from(U) trait {
     abstract from(x: U): _(U)
 }
