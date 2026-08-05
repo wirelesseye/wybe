@@ -1396,13 +1396,29 @@ matchTraitImplProc' absProcSpec absProcDef implProcSpec implProcDef = do
         implInfo' = fromMaybe implInfo $ boolFnToTest implInfo
     let pos = procPos absProcDef
         hasBang = fiNeedsResBang absInfo
+    typesMatch <- matchTraitImplTypes absInfo' implInfo'
+    -- A default method is declared against the unspecialised trait type and
+    -- is intentionally instantiated separately for each implementation.
+    defaultImpl <- lift $ isDefaultTraitImpl implInfo
     result <- if matchTraitImplHeaders absInfo' implInfo'
+                    && (typesMatch || defaultImpl)
         then matchTypes (procName absProcDef) (procName implProcDef) pos hasBang
             (fiTypes absInfo) (fiFlows absInfo) implInfo
         else do
             logTyped $ "proc headers mismatched: \n" ++ show absInfo ++ "\n" ++ show implInfo
             return $ Err []
     return (absInfo', implInfo', result)
+
+
+-- |A concrete procedure implementing a trait method must have the expected
+-- types, modulo renaming its type variables.
+matchTraitImplTypes :: CallInfo -> CallInfo -> Typed Bool
+matchTraitImplTypes expected actual = do
+    bounds <- gets tvarDict
+    let canonicalTypes info =
+            let ((types, _), _) = canonicalise 0 bounds $ fiTypes info
+            in types
+    return $ canonicalTypes expected == canonicalTypes actual
 
 
 matchTraitImplHeaders :: CallInfo -> CallInfo -> Bool
