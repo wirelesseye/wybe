@@ -9,8 +9,8 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_multiple_trait_params.<0>
   constants       : 0:: CStringInfo {cstringChars = "John"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.add_person#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_multiple_trait_params.school <: trait_multiple_trait_params.group, vtableMod = ["trait_multiple_trait_params"], vtablePrerequisites = []}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.person_name#adapter<0>], vtableExternal = False, vtableIndex = 1, vtableSpec = trait_multiple_trait_params.student <: trait_multiple_trait_params.person, vtableMod = ["trait_multiple_trait_params"], vtablePrerequisites = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.add_person#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_multiple_trait_params.school <: trait_multiple_trait_params.group, vtableMod = ["trait_multiple_trait_params"], vtableConstraints = []}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_multiple_trait_params.person_name#adapter<0>], vtableExternal = False, vtableIndex = 1, vtableSpec = trait_multiple_trait_params.student <: trait_multiple_trait_params.person, vtableMod = ["trait_multiple_trait_params"], vtableConstraints = []}
                     3:: StructInfo {structSize = 16, structData = [IntStructMember 4 8,PointerStructMember c"John"]}
   imports         : use trait_multiple_trait_params.group
                     use trait_multiple_trait_params.person

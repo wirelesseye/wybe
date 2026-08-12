@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_generic_impl.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_generic_impl.first#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_generic_impl.box(Type0) <: trait_generic_impl.sequence(Type0), vtableMod = ["trait_generic_impl"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_generic_impl.first#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_generic_impl.box(Type0) <: trait_generic_impl.sequence(Type0), vtableMod = ["trait_generic_impl"], vtableConstraints = []}
   imports         : use trait_generic_impl.box
                     use trait_generic_impl.sequence
                     use wybe

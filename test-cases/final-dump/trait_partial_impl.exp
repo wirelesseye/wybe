@@ -8,8 +8,8 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_partial_impl.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_partial_impl.hash#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_partial_impl.hash, vtableMod = ["trait_partial_impl"], vtablePrerequisites = []}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_partial_impl.key_hash#adapter<0>], vtableExternal = False, vtableIndex = 1, vtableSpec = trait_partial_impl.hashmap(Type0<:trait_partial_impl.hash, Type1) <: trait_partial_impl.mapping(Type0, Type1), vtableMod = ["trait_partial_impl"], vtablePrerequisites = [(Type0,trait_partial_impl.hash)]}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_partial_impl.hash#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_partial_impl.hash, vtableMod = ["trait_partial_impl"], vtableConstraints = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_partial_impl.key_hash#adapter<0>], vtableExternal = False, vtableIndex = 1, vtableSpec = trait_partial_impl.hashmap(Type0<:trait_partial_impl.hash, Type1) <: trait_partial_impl.mapping(Type0, Type1), vtableMod = ["trait_partial_impl"], vtableConstraints = [(Type0,trait_partial_impl.hash)]}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 42 8,FloatStructMember 3.14 8]}
   imports         : use trait_partial_impl.hash
                     use trait_partial_impl.hashmap

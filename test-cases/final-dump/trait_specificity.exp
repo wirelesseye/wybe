@@ -51,7 +51,7 @@ define external fastcc i64 @"trait_import_support#.specificity_printable#.render
                     trait_import_support.specificity_scalar.value<1>
                     trait_import_support.specificity_scalar.~=<0>
   constants       : 0:: CStringInfo {cstringChars = "scalar "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.specificity_scalar.render#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.specificity_scalar <: trait_import_support.specificity_printable, vtableMod = ["trait_import_support","specificity_scalar"], vtablePrerequisites = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.specificity_scalar.render#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.specificity_scalar <: trait_import_support.specificity_printable, vtableMod = ["trait_import_support","specificity_scalar"], vtableConstraints = []}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 7 8,PointerStructMember c"scalar "]}
   imports         : use trait_import_support.specificity_printable
                     use wybe

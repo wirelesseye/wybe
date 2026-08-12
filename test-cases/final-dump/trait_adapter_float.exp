@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_adapter_float.<0>
                     trait_adapter_float.my_method<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_adapter_float.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_adapter_float.my_trait, vtableMod = ["trait_adapter_float"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_adapter_float.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_adapter_float.my_trait, vtableMod = ["trait_adapter_float"], vtableConstraints = []}
   imports         : use trait_adapter_float.my_trait
                     use wybe
   resources       : 

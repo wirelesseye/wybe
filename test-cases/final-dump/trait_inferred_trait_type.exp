@@ -8,8 +8,8 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_inferred_trait_type.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"], vtablePrerequisites = []}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = wybe.int <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.float <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"], vtableConstraints = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_inferred_trait_type.my_method#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = wybe.int <: trait_inferred_trait_type.my_trait, vtableMod = ["trait_inferred_trait_type"], vtableConstraints = []}
   imports         : use trait_inferred_trait_type.my_trait
                     use wybe
   resources       : 

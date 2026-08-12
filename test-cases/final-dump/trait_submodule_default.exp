@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_submodule_default.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule_default.greet#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_submodule_default.greeter, vtableMod = ["trait_submodule_default"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_submodule_default.greet#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_submodule_default.greeter, vtableMod = ["trait_submodule_default"], vtableConstraints = []}
   imports         : use trait_submodule_default.greeter
                     use wybe
   resources       : 

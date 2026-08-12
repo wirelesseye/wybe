@@ -8,7 +8,7 @@ AFTER EVERYTHING:
   public submods  : 
   public resources: 
   public procs    : trait_default.<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.default_silent.greet#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = trait_import_support.default_silent <: trait_import_support.default_greeter, vtableMod = ["trait_import_support","default_silent"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.default_silent.greet#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = trait_import_support.default_silent <: trait_import_support.default_greeter, vtableMod = ["trait_import_support","default_silent"], vtableConstraints = []}
   imports         : use trait_import_support.default_greeter
                     use trait_import_support.default_silent
                     use wybe
@@ -125,7 +125,7 @@ define external fastcc i64 @"trait_import_support#.default_greeter#.greet<1>"() 
   public procs    : trait_import_support.default_silent.=<0>
                     trait_import_support.default_silent.trait_default_silent<0>
                     trait_import_support.default_silent.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.default_silent.greet#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.default_silent <: trait_import_support.default_greeter, vtableMod = ["trait_import_support","default_silent"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.default_silent.greet#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.default_silent <: trait_import_support.default_greeter, vtableMod = ["trait_import_support","default_silent"], vtableConstraints = []}
   imports         : use trait_import_support.default_greeter
                     use wybe
   resources       : 

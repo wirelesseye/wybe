@@ -65,7 +65,7 @@ define external fastcc i64 @"trait_import_support#.override_named#.describe<1>"(
                     trait_import_support.override_person.trait_override_person<0>
                     trait_import_support.override_person.trait_override_person<1>
                     trait_import_support.override_person.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.override_person.describe#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.override_person <: trait_import_support.override_named, vtableMod = ["trait_import_support","override_person"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.override_person.describe#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.override_person <: trait_import_support.override_named, vtableMod = ["trait_import_support","override_person"], vtableConstraints = []}
   imports         : use trait_import_support.override_named
                     use wybe
   resources       : 
@@ -185,7 +185,7 @@ define external fastcc i1 @"trait_import_support#.override_person#.~=<0>"(i64 %"
   public resources: 
   public procs    : trait_override.<0>
   constants       : 0:: CStringInfo {cstringChars = "Ada"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.override_person.describe#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = trait_import_support.override_person <: trait_import_support.override_named, vtableMod = ["trait_import_support","override_person"], vtablePrerequisites = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.override_person.describe#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = trait_import_support.override_person <: trait_import_support.override_named, vtableMod = ["trait_import_support","override_person"], vtableConstraints = []}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"Ada"]}
   imports         : use trait_import_support.override_named
                     use trait_import_support.override_person

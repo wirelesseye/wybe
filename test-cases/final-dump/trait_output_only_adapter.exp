@@ -10,7 +10,7 @@ AFTER EVERYTHING:
   public procs    : trait_output_only_adapter.<0>
                     trait_output_only_adapter.from_string<0>
   constants       : 0:: CStringInfo {cstringChars = "123"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_output_only_adapter.from_string#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_output_only_adapter.from_string, vtableMod = ["trait_output_only_adapter"], vtablePrerequisites = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_output_only_adapter.from_string#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_output_only_adapter.from_string, vtableMod = ["trait_output_only_adapter"], vtableConstraints = []}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"123"]}
   imports         : use trait_output_only_adapter.from_string
                     use wybe

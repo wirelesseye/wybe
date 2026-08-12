@@ -1022,9 +1022,9 @@ writeLPVMCall "make_vtable" _ args pos = do
     releaseDeferredCall
     args' <- partitionArgs "lpvm make_vtable instruction" args
     case args' of
-        (template:ArgInt methodCount _:prerequisites, [result]) -> do
+        (template:ArgInt methodCount _:constraintVTables, [result]) -> do
             let methodSlots = fromIntegral methodCount
-                totalSlots = methodSlots + length prerequisites
+                totalSlots = methodSlots + length constraintVTables
             stackAlloc result (totalSlots * wordSizeBytes)
             let table = setArgFlow FlowIn result
             forM_ [0 .. methodSlots - 1] $ \index -> do
@@ -1035,10 +1035,10 @@ writeLPVMCall "make_vtable" _ args pos = do
                 (writeMember, readMember) <- freshCPtrArgs
                 llvmLoad source writeMember
                 llvmStore destination readMember
-            forM_ (zip [methodSlots..] prerequisites) $ \(index, prerequisite) -> do
+            forM_ (zip [methodSlots..] constraintVTables) $ \(index, constraint) -> do
                 destination <- getElementPtr True (llvmTypeRep CPointer)
                     (Just table) [ArgInt (fromIntegral index) intType]
-                llvmStore destination prerequisite
+                llvmStore destination constraint
         (ins, outs) ->
             shouldnt $ "lpvm make_vtable with inputs " ++ show ins
                 ++ " and outputs " ++ show outs

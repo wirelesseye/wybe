@@ -9,7 +9,7 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_abstract_proc_dispatch.<0>
   constants       : 0:: CStringInfo {cstringChars = "value "}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_abstract_proc_dispatch.print_value#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_abstract_proc_dispatch.printable, vtableMod = ["trait_abstract_proc_dispatch"], vtablePrerequisites = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_abstract_proc_dispatch.print_value#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_abstract_proc_dispatch.printable, vtableMod = ["trait_abstract_proc_dispatch"], vtableConstraints = []}
                     2:: StructInfo {structSize = 16, structData = [IntStructMember 6 8,PointerStructMember c"value "]}
   imports         : use trait_abstract_proc_dispatch.printable
                     use wybe

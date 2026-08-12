@@ -10,7 +10,7 @@ AFTER EVERYTHING:
   public procs    : trait_abstract_proc_modifiers.<0>
   constants       : 0:: CStringInfo {cstringChars = "matched"}
                     1:: CStringInfo {cstringChars = "not matched"}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_abstract_proc_modifiers.matches#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_abstract_proc_modifiers.matcher, vtableMod = ["trait_abstract_proc_modifiers"], vtablePrerequisites = []}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_abstract_proc_modifiers.matches#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_abstract_proc_modifiers.matcher, vtableMod = ["trait_abstract_proc_modifiers"], vtableConstraints = []}
                     3:: StructInfo {structSize = 16, structData = [IntStructMember 11 8,PointerStructMember c"not matched"]}
                     4:: StructInfo {structSize = 16, structData = [IntStructMember 7 8,PointerStructMember c"matched"]}
                     5:: ArrayInfo {arrayData = [PointerStructMember "not matched",PointerStructMember "matched"]}

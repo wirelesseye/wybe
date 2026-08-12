@@ -1,5 +1,5 @@
 # A partial trait implementation constructs a concrete vtable at the call site
-# and supplies its prerequisite vtables to the implementation adapter.
+# and supplies its constraint vtables to the implementation adapter.
 
 type hash trait {
     abstract hash(x:_): int

@@ -10,8 +10,8 @@ AFTER EVERYTHING:
   public procs    : trait_concrete_type_args.<0>
   constants       : 0:: CStringInfo {cstringChars = "boxed int"}
                     1:: CStringInfo {cstringChars = "boxed float"}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_concrete_type_args.box(wybe.float) <: trait_concrete_type_args.printable, vtableMod = ["trait_concrete_type_args"], vtablePrerequisites = []}
-                    3:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = trait_concrete_type_args.box(wybe.int) <: trait_concrete_type_args.printable, vtableMod = ["trait_concrete_type_args"], vtablePrerequisites = []}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_concrete_type_args.box(wybe.float) <: trait_concrete_type_args.printable, vtableMod = ["trait_concrete_type_args"], vtableConstraints = []}
+                    3:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_concrete_type_args.render#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = trait_concrete_type_args.box(wybe.int) <: trait_concrete_type_args.printable, vtableMod = ["trait_concrete_type_args"], vtableConstraints = []}
                     4:: StructInfo {structSize = 16, structData = [IntStructMember 11 8,PointerStructMember c"boxed float"]}
                     5:: StructInfo {structSize = 16, structData = [IntStructMember 9 8,PointerStructMember c"boxed int"]}
   imports         : use trait_concrete_type_args.box

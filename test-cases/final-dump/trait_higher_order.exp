@@ -100,7 +100,7 @@ define external fastcc i64 @"trait_higher_order#.describe_box<0>"(i64 %"x##0") {
                     trait_import_support.higher_order_box.trait_higher_order_box<0>
                     trait_import_support.higher_order_box.trait_higher_order_box<1>
                     trait_import_support.higher_order_box.~=<0>
-  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.higher_order_box.apply_to_self#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.higher_order_box <: trait_import_support.higher_order_mapper, vtableMod = ["trait_import_support","higher_order_box"], vtablePrerequisites = []}
+  constants       : 0:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_import_support.higher_order_box.apply_to_self#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = trait_import_support.higher_order_box <: trait_import_support.higher_order_mapper, vtableMod = ["trait_import_support","higher_order_box"], vtableConstraints = []}
   imports         : use trait_import_support.higher_order_mapper
                     use wybe
   resources       : 

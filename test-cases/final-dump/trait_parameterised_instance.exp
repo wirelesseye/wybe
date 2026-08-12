@@ -9,8 +9,8 @@ AFTER EVERYTHING:
   public resources: 
   public procs    : trait_parameterised_instance.<0>
   constants       : 0:: CStringInfo {cstringChars = "123"}
-                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_parameterised_instance.from#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_parameterised_instance.from(wybe.float), vtableMod = ["trait_parameterised_instance"], vtablePrerequisites = []}
-                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_parameterised_instance.from#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = wybe.int <: trait_parameterised_instance.from(wybe.string), vtableMod = ["trait_parameterised_instance"], vtablePrerequisites = []}
+                    1:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_parameterised_instance.from#adapter<0>], vtableExternal = False, vtableIndex = 0, vtableSpec = wybe.int <: trait_parameterised_instance.from(wybe.float), vtableMod = ["trait_parameterised_instance"], vtableConstraints = []}
+                    2:: VTableInfo {vtableSize = 8, vtableData = [FnPointerStructMember trait_parameterised_instance.from#adapter<1>], vtableExternal = False, vtableIndex = 1, vtableSpec = wybe.int <: trait_parameterised_instance.from(wybe.string), vtableMod = ["trait_parameterised_instance"], vtableConstraints = []}
                     3:: StructInfo {structSize = 16, structData = [IntStructMember 3 8,PointerStructMember c"123"]}
   imports         : use trait_parameterised_instance.from
                     use wybe

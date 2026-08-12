@@ -25,8 +25,8 @@ AFTER EVERYTHING:
                     14:: CStringInfo {cstringChars = "5 in 9..0"}
                     15:: CStringInfo {cstringChars = "0 in 9..0"}
                     16:: CStringInfo {cstringChars = "10 in 9..0"}
-                    17:: VTableInfo {vtableSize = 16, vtableData = [FnPointerStructMember wybe.int.=#adapter<0>,FnPointerStructMember wybe.int.~=#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = wybe.int <: wybe.eq, vtableMod = ["wybe","int"], vtablePrerequisites = []}
-                    18:: VTableInfo {vtableSize = 16, vtableData = [FnPointerStructMember wybe.string.=#adapter<0>,FnPointerStructMember wybe.string.~=#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = wybe.string <: wybe.eq, vtableMod = ["wybe","string"], vtablePrerequisites = []}
+                    17:: VTableInfo {vtableSize = 16, vtableData = [FnPointerStructMember wybe.int.=#adapter<0>,FnPointerStructMember wybe.int.~=#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = wybe.int <: wybe.eq, vtableMod = ["wybe","int"], vtableConstraints = []}
+                    18:: VTableInfo {vtableSize = 16, vtableData = [FnPointerStructMember wybe.string.=#adapter<0>,FnPointerStructMember wybe.string.~=#adapter<0>], vtableExternal = True, vtableIndex = 0, vtableSpec = wybe.string <: wybe.eq, vtableMod = ["wybe","string"], vtableConstraints = []}
                     19:: StructInfo {structSize = 16, structData = [IntStructMember 10 8,PointerStructMember c"10 in 9..0"]}
                     20:: StructInfo {structSize = 16, structData = [IntStructMember 9 8,PointerStructMember c"0 in 9..0"]}
                     21:: StructInfo {structSize = 16, structData = [IntStructMember 9 8,PointerStructMember c"5 in 9..0"]}
