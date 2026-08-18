@@ -1027,14 +1027,11 @@ writeLPVMCall "make_vtable" _ args pos = do
                 totalSlots = methodSlots + length constraintVTables
             stackAlloc result (totalSlots * wordSizeBytes)
             let table = setArgFlow FlowIn result
-            forM_ [0 .. methodSlots - 1] $ \index -> do
-                source <- getElementPtr True (llvmTypeRep CPointer)
-                    (Just template) [ArgInt (fromIntegral index) intType]
-                destination <- getElementPtr True (llvmTypeRep CPointer)
-                    (Just table) [ArgInt (fromIntegral index) intType]
-                (writeMember, readMember) <- freshCPtrArgs
-                llvmLoad source writeMember
-                llvmStore destination readMember
+            when (methodSlots > 0) $ do
+                copyfn <- llvmMemcpyFn
+                let nonvolatile = ArgInt 0 $ Representation $ Bits 1
+                    copyBytes = intConst (fromIntegral $ methodSlots * wordSizeBytes)
+                writeCCall copyfn [] [table, template, copyBytes, nonvolatile] Nothing
             forM_ (zip [methodSlots..] constraintVTables) $ \(index, constraint) -> do
                 destination <- getElementPtr True (llvmTypeRep CPointer)
                     (Just table) [ArgInt (fromIntegral index) intType]
