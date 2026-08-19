@@ -74,8 +74,6 @@ normaliseItem (RepresentationDecl params mods rep pos) = do
     addTypeRep rep pos
 normaliseItem (TraitDecl params mods pos) = do
     updateTypeModifiers mods
-    -- TODO: implement trait type parameters
-    unless (List.null params) $ nyi "trait type parameters"
     addParameters (RealTypeVar <$> params) pos
     addTrait pos
 normaliseItem (ConstructorDecl vis params mods ctors pos) = do

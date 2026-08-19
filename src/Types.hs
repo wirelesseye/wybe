@@ -1285,7 +1285,8 @@ matchTraitImplProc :: TraitImplSpec -> ProcSpec -> ProcDef -> ProcSpec
 matchTraitImplProc ispec@(TraitImplSpec trait _) absProcSpec absProcDef implProcSpec = do
     implProcDef <- getProcDef implProcSpec
     let traitMod = trustFromJust "typecheckLocalTraitImpl" (typeModule trait)
-        absProcDef' = absProcDef { procProto = traitImplProcProto ispec absProcDef }
+    absProto <- traitImplProcProto ispec absProcDef
+    let absProcDef' = absProcDef { procProto = absProto }
     ((absInfo, implInfo, result), _) <- runStateT
         (matchTraitImplProc' absProcSpec absProcDef' implProcSpec implProcDef)
         $ initTyping absProcDef' traitMod
@@ -1323,27 +1324,6 @@ matchTraitImplHeaders absInfo implInfo =
     && fiOutRes absInfo == fiOutRes implInfo
     && fiNeedsResBang absInfo == fiNeedsResBang implInfo
     && fiPartial absInfo == fiPartial implInfo
-
-
-traitImplProcProto :: TraitImplSpec -> ProcDef -> ProcProto
-traitImplProcProto ispec@(TraitImplSpec trait implTy) absProcDef = do
-    let proto = procProto absProcDef
-        bounds = Map.fromListWith Set.union
-            [(name, Set.singleton bound) | (name, bound) <- procBoundedTypeParams absProcDef]
-    proto { procProtoParams = contentApply (substParam bounds) <$> procProtoParams proto }
-    where
-        substParam bounds param =
-            param { paramType = substParamType bounds $ paramType param }
-        substParamType bounds ty@TypeVariable{typeVariableName=name}
-            | trait `Set.member` Map.findWithDefault Set.empty name bounds = implTy
-            | otherwise = ty
-        substParamType bounds ty@TypeSpec{typeParams=params} =
-            ty { typeParams = substParamType bounds <$> params }
-        substParamType bounds ty@HigherOrderType{higherTypeParams=tfs} =
-            ty { higherTypeParams = substTypeFlow bounds <$> tfs }
-        substParamType _ ty = ty
-        substTypeFlow bounds tf =
-            tf { typeFlowType = substParamType bounds $ typeFlowType tf }
 
 
 ----------------------------------------------------------------

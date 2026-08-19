@@ -119,7 +119,7 @@ module AST (
   setDetism, setInline, setImpurity, setVariant,
   ProcVariant(..), Inlining(..), Impurity(..),
   addProc, addProcDef, addAbstractProc, addTraitImpl, lookupProc, publicProc, callTargets,
-  abstractProcs, outputVariableName, outputStatusName,
+  abstractProcs, traitImplProcProto, outputVariableName, outputStatusName,
   envParamName, envPrimParam, makeGlobalResourceName,
   showBody, showPlacedPrims, showStmt, showBlock, showProcDef,
   showProcIdentifier, showProcName, showProcOrVarName,
@@ -159,6 +159,7 @@ import Data.Map as Map
       findWithDefault,
       foldr,
       fromList,
+      fromListWith,
       insert,
       insertWith,
       keys,
@@ -1731,6 +1732,44 @@ abstractProcs trait = do
             <$> concatMap (`zip` [0..]) . Map.elems . modProcs) `inModule` traitMod
     return $ List.sortOn (procAbstract . snd)
         (List.filter (isJust . procAbstract . snd) procsInTraitMod)
+
+
+-- |Specialize an abstract trait method prototype for a concrete vtable spec.
+traitImplProcProto :: TraitImplSpec -> ProcDef -> Compiler ProcProto
+traitImplProcProto ispec@(TraitImplSpec trait implTy) absProcDef = do
+    traitParams <- maybe (return []) (getModule modParams `inModule`) $
+        typeModule trait
+    let proto = procProto absProcDef
+        bounds = Map.fromListWith Set.union
+            [(name, Set.singleton bound) | (name, bound) <- procBoundedTypeParams absProcDef]
+        traitParamBindings = Map.fromList $ zip traitParams (typeParams trait)
+    return proto {
+        procProtoParams =
+            contentApply (substParam traitParamBindings bounds) <$>
+                procProtoParams proto
+    }
+  where
+    substParam traitParamBindings bounds param =
+        param { paramType =
+            substParamType traitParamBindings bounds $ paramType param }
+    substParamType traitParamBindings bounds ty@TypeVariable{typeVariableName=name}
+        | any sameTraitModule (Map.findWithDefault Set.empty name bounds) =
+            implTy
+        | otherwise =
+            fromMaybe ty {
+                typeVariableBounds =
+                    Set.map (substParamType traitParamBindings bounds)
+                        (typeVariableBounds ty)
+            } $ Map.lookup name traitParamBindings
+    substParamType traitParamBindings bounds ty@TypeSpec{typeParams=params} =
+        ty { typeParams = substParamType traitParamBindings bounds <$> params }
+    substParamType traitParamBindings bounds ty@HigherOrderType{higherTypeParams=tfs} =
+        ty { higherTypeParams = substTypeFlow traitParamBindings bounds <$> tfs }
+    substParamType _ _ ty = ty
+    substTypeFlow traitParamBindings bounds tf =
+        tf { typeFlowType =
+            substParamType traitParamBindings bounds $ typeFlowType tf }
+    sameTraitModule bound = typeModule bound == typeModule trait
 
 
 -- |Apply the given function to the current module implementation.
