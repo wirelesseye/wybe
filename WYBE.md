@@ -1866,8 +1866,44 @@ specialised abstract procedures and functions.  In particular, a generic
 procedure does not implement a trait for a concrete type: `def name(x:T):
 string` does not satisfy `impl int <: named`.
 
-Trait bounds on type variables, such as `T<:formattable`, are not yet
-supported in generic trait implementations.
+Type variables in the implementation type may have trait bounds.  Such a
+bounded generic implementation applies only when the corresponding concrete
+type implements every bound.  For example:
+
+```
+type box(T) {
+    pub box(value:T)
+}
+
+impl box(T<:formattable) <: named
+
+def name(x:box(T<:formattable)): string = fmt(x^value)
+```
+
+This implementation of `named` applies to `box(int)` if `int` implements
+`formattable`, but not to `box(U)` when `U` does not.  The same bounds must be
+written on the type variables in the implementing procedures and functions.
+Bounds constrain variables in the implementation type; type variables in the
+implemented trait cannot introduce additional bounds.
+
+When more than one implementation applies, Wybe selects the unique most
+specific one.  A concrete implementation is more specific than a bounded
+generic implementation, which is more specific than the corresponding
+unbounded generic implementation.  Implementations with independent bounds
+may overlap without error, but using a type in their overlap is ambiguous if
+neither implementation is more specific.  A further implementation covering
+the intersection can resolve the ambiguity.  For example, given generic
+`pair(A,B)` and trait `named`:
+
+```
+impl pair(A<:formattable,B) <: named
+impl pair(A,B<:formattable) <: named
+impl pair(A<:formattable,B<:formattable) <: named
+```
+
+The third declaration is selected when both type arguments implement
+`formattable`; without it, selecting a `named` implementation for such a pair
+would be ambiguous.
 
 ### Default trait implementations
 
